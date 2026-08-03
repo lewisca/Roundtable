@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Roundtable — the family tree you build together</title>
+<meta name="description" content="Share one board code. Everyone fills in the branch they know best, and the tree keeps growing.">
+<meta name="theme-color" content="#c67139">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: #e4d9c2;
+    font-family: Figtree, system-ui, -apple-system, sans-serif;
+    color: #201e1d;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: #8c491a; text-decoration: none; }
+  a:hover { color: #b2622d; }
+  ::selection { background: #ffe1d0; }
+  input, button, textarea { font-family: inherit; }
+  @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  .noscroll::-webkit-scrollbar { display: none; }
+  .noscroll { scrollbar-width: none; }
+
+  /* Responsive device shell: full-screen on phones, framed card on desktop */
+  #stage {
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  #device {
+    position: relative;
+    width: 100%;
+    max-width: 440px;
+    height: 100dvh;
+    background: #f5ead8;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  @media (min-width: 500px) {
+    #stage { padding: 32px; }
+    #device {
+      height: min(880px, calc(100dvh - 64px));
+      border-radius: 40px;
+      box-shadow: 0 30px 70px rgba(46,43,37,.32);
+      border: 10px solid #201e1d;
+    }
+  }
+  .screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  /* Projection View — read-only, full-window live display for a TV/projector */
+  .proj {
+    position: fixed; inset: 0; z-index: 60;
+    background: radial-gradient(120% 120% at 50% 0%, #f7eddb 0%, #efe2c9 100%);
+    display: flex; flex-direction: column; gap: 22px;
+    padding: clamp(20px, 3vw, 46px);
+    overflow: hidden;
+    font-family: Figtree, system-ui, sans-serif; color: #201e1d;
+    animation: riseIn .35s ease;
+  }
+  .proj-cols { flex: 1; min-height: 0; display: flex; gap: 28px; }
+  .proj-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  .proj-tree { flex: 1; overflow: auto; padding-right: 6px; }
+  .proj-side { width: 340px; flex: none; display: flex; flex-direction: column; gap: 18px; min-height: 0; }
+  @media (max-width: 820px) {
+    .proj-cols { flex-direction: column; gap: 18px; }
+    .proj-side { width: auto; flex: 0 0 auto; max-height: 40%; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"><div id="device"></div></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   Roundtable — a collaborative family-reunion tree.
+   Implemented from the "Family Reunion Tree v2" design concept.
+   Zero dependencies: a tiny keyed virtual-DOM (focus/caret preserving) plus
+   a faithful port of the concept's state machine, with real localStorage
+   persistence so boards survive reloads.
+   ========================================================================= */
+
+/* ---------------------------- tiny vdom ---------------------------------- */
+function h(tag, props, ...kids) {
+  const children = [];
+  const push = k => {
+    if (k == null || k === false || k === true) return;
+    if (Array.isArray(k)) { k.forEach(push); return; }
+    if (typeof k === "object" && k.tag !== undefined) children.push(k);
+    else children.push({ text: String(k) });
+  };
+  kids.forEach(push);
+  return { tag, props: props || {}, children, key: (props && props.key) };
+}
+
+function makeEl(vn) {
+  if (vn.text !== undefined) return document.createTextNode(vn.text);
+  const el = document.createElement(vn.tag);
+  patchProps(el, {}, vn.props);
+  vn._el = el;
+  vn.children.forEach(c => el.appendChild(makeEl(c)));
+  return el;
+}
+
+function setStyle(el, css) {
+  if (el._base === css) return;
+  el._base = css || "";
+  el.style.cssText = el._base;
+}
+function ensureHover(el) {
+  if (el._hoverBound) return;
+  el._hoverBound = true;
+  el.addEventListener("mouseenter", () => {
+    if (el._hover) el.style.cssText = (el._base || "") + ";" + el._hover;
+  });
+  el.addEventListener("mouseleave", () => { el.style.cssText = el._base || ""; });
+}
+
+function patchProps(el, oldP, newP) {
+  // remove gone props
+  for (const k in oldP) if (!(k in newP)) {
+    if (k === "onClick") el.onclick = null;
+    else if (k === "onInput" || k === "onChange") el.oninput = null;
+    else if (k.startsWith("on")) el[k.toLowerCase()] = null;
+    else if (k !== "key" && k !== "hover" && k !== "style") el.removeAttribute(k);
+  }
+  for (const k in newP) {
+    const v = newP[k];
+    if (k === "key") continue;
+    else if (k === "style") setStyle(el, v);
+    else if (k === "hover") { el._hover = v; ensureHover(el); }
+    else if (k === "class") el.className = v;
+    else if (k === "onClick") el.onclick = v;
+    else if (k === "onInput" || k === "onChange") el.oninput = v;
+    else if (k.startsWith("on")) el[k.toLowerCase()] = v;
+    else if (k === "value") { if (el.value !== v) el.value = v == null ? "" : v; }
+    else if (k === "checked") { el.checked = !!v; }
+    else if (v == null || v === false) el.removeAttribute(k);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+}
+
+function sameType(a, b) {
+  if (a.text !== undefined || b.text !== undefined) return a.text !== undefined && b.text !== undefined;
+  return a.tag === b.tag && a.key === b.key;
+}
+
+function patch(parent, oldVn, newVn, index) {
+  const existing = parent.childNodes[index];
+  if (!oldVn) { parent.appendChild(makeEl(newVn)); return; }
+  if (!newVn) { if (existing) parent.removeChild(existing); return; }
+  if (!sameType(oldVn, newVn)) {
+    const fresh = makeEl(newVn);
+    parent.replaceChild(fresh, existing);
+    return;
+  }
+  if (newVn.text !== undefined) {
+    if (oldVn.text !== newVn.text && existing) existing.nodeValue = newVn.text;
+    newVn._el = existing;
+    return;
+  }
+  const el = existing;
+  newVn._el = el;
+  patchProps(el, oldVn.props, newVn.props);
+  patchChildren(el, oldVn.children, newVn.children);
+}
+
+function patchChildren(el, oldKids, newKids) {
+  const keyed = newKids.length && newKids[0].key != null;
+  if (keyed) {
+    // build map of old keyed nodes
+    const oldByKey = new Map();
+    oldKids.forEach(k => { if (k.key != null) oldByKey.set(k.key, k); });
+    let domIndex = 0;
+    newKids.forEach(nk => {
+      const ok = oldByKey.get(nk.key);
+      if (ok && ok._el) {
+        // move into place if needed
+        const target = el.childNodes[domIndex];
+        if (target !== ok._el) el.insertBefore(ok._el, target || null);
+        patch(el, ok, nk, domIndex);
+        oldByKey.delete(nk.key);
+      } else {
+        const fresh = makeEl(nk);
+        el.insertBefore(fresh, el.childNodes[domIndex] || null);
+      }
+      domIndex++;
+    });
+    // remove leftovers
+    oldByKey.forEach(ok => { if (ok._el && ok._el.parentNode === el) el.removeChild(ok._el); });
+    // trim any excess
+    while (el.childNodes.length > newKids.length) el.removeChild(el.lastChild);
+    return;
+  }
+  const max = Math.max(oldKids.length, newKids.length);
+  for (let i = 0; i < max; i++) patch(el, oldKids[i], newKids[i], i);
+  while (el.childNodes.length > newKids.length) el.removeChild(el.lastChild);
+}
+
+/* ------------------------------- app ------------------------------------- */
+const ACCENT = "#c67139";
+const GEN = [
+  { color: "#c67139", soft: "#ffe1d0", label: "Gen 1" },
+  { color: "#7a8a5e", soft: "#e1eecc", label: "Gen 2" },
+  { color: "#8c491a", soft: "#fff2eb", label: "Gen 3" },
+  { color: "#645c50", soft: "#eee7db", label: "Gen 4" },
+  { color: "#9a5b6d", soft: "#f2dfe4", label: "Gen 5" },
+  { color: "#3f7d76", soft: "#d9ebe6", label: "Gen 6" },
+  { color: "#a07d2c", soft: "#f1e7c8", label: "Gen 7" },
+  { color: "#6d6796", soft: "#e7e5f0", label: "Gen 8" }
+];
+
+const SEED = {
+  familyName: "Vanderhoven Family",
+  thread: [
+    { who: "Danny", i: "D", c: "#8c491a", text: "Aren’t these the same Camila? Mine has the Hale spelling." },
+    { who: "Tío Tomás", i: "T", c: "#7a8a5e", text: "Hers is Reyes-Hale on the birth certificate. Let her pick." }
+  ],
+  people: [
+    { id: "manuel", parentId: null, name: "Manuel Reyes", born: "1935", died: "2019", place: "Ponce, PR", note: "Same straw hat for thirty years", partner: { name: "Elena Reyes", born: "1938" }, addedBy: "Rita" },
+    { id: "rosa", parentId: "manuel", name: "Rosa Hale", born: "1961", place: "Tampa, FL", partner: { name: "Gary Hale", born: "1959" }, addedBy: "Rita" },
+    { id: "danny", parentId: "rosa", name: "Danny Hale", born: "1989", place: "Tampa, FL", addedBy: "Danny" },
+    { id: "camila", parentId: "rosa", name: "Camila Hale", born: "1992", place: "Tampa, FL", addedBy: "Danny", flag: true },
+    { id: "camila2", parentId: "rosa", name: "Camila Reyes-Hale", born: "1992", place: "Ponce, PR", addedBy: "Tío Tomás", flag: true },
+    { id: "tomas", parentId: "manuel", name: "Tomás Reyes", born: "1963", place: "Chicago, IL", addedBy: "Rita" },
+    { id: "javi", parentId: "tomas", name: "Javi Reyes", born: "1994", place: "Chicago, IL", addedBy: "Javi" },
+    { id: "luz", parentId: "tomas", name: "Luz Reyes", born: "1998", place: "Chicago, IL", note: "Runs the dominoes table", addedBy: "Tío Tomás" },
+    { id: "mari", parentId: "manuel", name: "Marisol Reyes", born: "1966", place: "Chicago, IL", addedBy: "Javi" }
+  ],
+  feed: [
+    { who: "Tío Tomás", i: "T", c: "#7a8a5e", text: "added Luz Reyes", t: "2:11" },
+    { who: "Rita", i: "R", c: "#c67139", text: "wrote a line about Manuel", t: "2:09" },
+    { who: "Danny", i: "D", c: "#8c491a", text: "flagged two Camilas", t: "2:06" },
+    { who: "Javi", i: "J", c: "#82796a", text: "joined from the picnic table", t: "2:02" }
+  ],
+  log: [
+    { who: "Tío Tomás", i: "T", c: "#7a8a5e", verb: "added", target: "Luz Reyes", kind: "add", when: "Aug 3, 2026 · 2:11 PM" },
+    { who: "Rita", i: "R", c: "#c67139", verb: "edited", target: "Manuel Reyes", detail: "added a line: “Same straw hat for thirty years”", kind: "edit", when: "Aug 3, 2026 · 2:09 PM" },
+    { who: "Danny", i: "D", c: "#8c491a", verb: "flagged", target: "Camila Hale", detail: "possible duplicate of Camila Reyes-Hale", kind: "flag", when: "Aug 3, 2026 · 2:06 PM" },
+    { who: "Tío Tomás", i: "T", c: "#7a8a5e", verb: "added", target: "Camila Reyes-Hale", kind: "add", when: "Aug 3, 2026 · 2:05 PM" },
+    { who: "Danny", i: "D", c: "#8c491a", verb: "removed", target: "Gary Hale Jr.", detail: "added by mistake — no such person", kind: "remove", when: "Aug 3, 2026 · 2:04 PM" },
+    { who: "Javi", i: "J", c: "#82796a", verb: "joined", target: "the board", kind: "board", when: "Aug 3, 2026 · 2:02 PM" },
+    { who: "Rita", i: "R", c: "#c67139", verb: "started", target: "board V3L4Y2", kind: "board", when: "Aug 3, 2026 · 1:58 PM" }
+  ]
+};
+
+const SCRIPT = [
+  { who: "Rita", i: "R", c: "#c67139", text: "gave Marisol a partner — Pete Nakamura", logDetail: "partner recorded as Pete Nakamura, b. 1965", t: "2:15", patch: { id: "mari", partner: { name: "Pete Nakamura", born: "1965" } } },
+  { who: "Danny", i: "D", c: "#8c491a", text: "added baby Sol", t: "2:16", person: { id: "sol", parentId: "danny", name: "Sol Hale", born: "2024", place: "Tampa, FL", addedBy: "Danny" } },
+  { who: "Javi", i: "J", c: "#82796a", text: "filled in where Javi was born", logDetail: "note added: “Third-generation Cubs fan”", t: "2:17", patch: { id: "javi", note: "Third-generation Cubs fan" } }
+];
+
+const STORE_PREFIX = "roundtable:board:";
+const DEMO_ROOM = "V3L4Y2";
+
+const App = {
+  state: {
+    step: "landing",
+    joining: false,
+    codeInput: "",
+    codeError: null,
+    room: DEMO_ROOM,
+    shared: true,
+    myName: "",
+    familyName: SEED.familyName,
+    zoom: 1,
+    projection: false,
+    query: "",
+    collapsed: {},
+    selected: null,
+    sheet: null,
+    editId: null,
+    editIsNew: false,
+    editParent: null,
+    deleteId: null,
+    draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "",
+    draftPartner: "", draftPartnerBorn: "", draftPartnerDied: "", draftPartnerPlace: "", draftMore: false,
+    tick: 0,
+    toast: null,
+    fresh: {},
+    replyText: "",
+    thread: clone(SEED.thread),
+    people: clone(SEED.people),
+    feed: clone(SEED.feed),
+    log: clone(SEED.log),
+    undoStack: [],
+    logFilter: "all",
+    payEmail: "", payCard: "", payExp: "", payCvc: "", payName: "", payError: null, subscribed: false
+  },
+
+  _vnode: null,
+  _root: null,
+  _toastTimer: null,
+  _liveTimer: null,
+
+  setState(update, cb) {
+    const patchObj = typeof update === "function" ? update(this.state) : update;
+    Object.assign(this.state, patchObj);
+    this.persist();
+    this.render();
+    if (cb) cb();
+  },
+
+  render() {
+    const V = this.renderVals();
+    const next = view(V);
+    if (!this._vnode) {
+      this._root.appendChild(makeEl(next));
+    } else {
+      patch(this._root, this._vnode, next, 0);
+    }
+    this._vnode = next;
+  },
+
+  /* ---- persistence -------------------------------------------------- */
+  persist() {
+    const s = this.state;
+    if (s.step !== "app") { localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, myName: s.myName })); return; }
+    const snap = {
+      familyName: s.familyName, people: s.people, feed: s.feed, log: s.log,
+      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed, subscribed: s.subscribed
+    };
+    try { localStorage.setItem(STORE_PREFIX + s.room, JSON.stringify(snap)); } catch (e) {}
+    localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName }));
+  },
+  loadRoom(room) {
+    const raw = localStorage.getItem(STORE_PREFIX + room);
+    if (raw) { try { return JSON.parse(raw); } catch (e) {} }
+    if (room === DEMO_ROOM) return { familyName: SEED.familyName, people: clone(SEED.people), feed: clone(SEED.feed), log: clone(SEED.log), thread: clone(SEED.thread), fresh: {}, collapsed: {}, subscribed: false };
+    return null;
+  },
+  enterRoom(room, isNew) {
+    const data = this.loadRoom(room);
+    if (data) {
+      Object.assign(this.state, {
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", toast: null,
+        familyName: data.familyName || "", people: data.people || [], feed: data.feed || [],
+        log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
+        collapsed: data.collapsed || {}, subscribed: !!data.subscribed
+      });
+    } else {
+      // brand-new empty board
+      const started = { who: this.state.myName || "You", i: this.initials(this.state.myName || "You"), c: "#201e1d", verb: "started", target: "board " + room, kind: "board", when: this.stamp() };
+      Object.assign(this.state, {
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", toast: null,
+        familyName: "", people: [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, subscribed: false
+      });
+    }
+    this.startLive();
+    this.persist();
+    this.render();
+  },
+
+  /* ---- helpers (ported) --------------------------------------------- */
+  presence() { return "avatars"; },
+  accent() { return ACCENT; },
+  gen(d) { return GEN[d % GEN.length]; },
+  initials(n) { return (n || "").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?"; },
+  years(p) {
+    if (!p) return "";
+    if (p.born && p.died) return p.born + " – " + p.died;
+    if (p.born) return "b. " + p.born;
+    if (p.died) return "d. " + p.died;
+    return "";
+  },
+  kidsOf(id) { return this.state.people.filter(p => p.parentId === id); },
+  below(id) { return this.kidsOf(id).reduce((t, k) => t + 1 + this.below(k.id), 0); },
+  depthOf(p) { let d = 0, cur = p; const by = id => this.state.people.find(x => x.id === id); while (cur && cur.parentId) { cur = by(cur.parentId); d++; if (d > 12) break; } return d; },
+  newCode() {
+    const a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let out = "";
+    for (let i = 0; i < 6; i++) out += a[Math.floor(Math.random() * a.length)];
+    return out;
+  },
+  plusDays(n) {
+    const d = new Date(Date.now() + n * 86400000);
+    const mo = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()];
+    return mo + " " + d.getDate() + ", " + d.getFullYear();
+  },
+  stamp() {
+    const d = new Date();
+    const mo = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()];
+    let hh = d.getHours(), ap = hh >= 12 ? "PM" : "AM";
+    hh = hh % 12 || 12;
+    return mo + " " + d.getDate() + ", " + d.getFullYear() + " · " + hh + ":" + String(d.getMinutes()).padStart(2, "0") + " " + ap;
+  },
+  logEntry(st, verb, target, kind, detail, who, i, c) {
+    return [{
+      who: who || (st.myName || "You"), i: i || this.initials(st.myName || "You"), c: c || "#201e1d",
+      verb, target, kind, detail: detail || null, when: this.stamp()
+    }].concat(st.log);
+  },
+  flashToast() { clearTimeout(this._toastTimer); this._toastTimer = setTimeout(() => this.setState({ toast: null }), 4200); },
+
+  startLive() {
+    clearInterval(this._liveTimer);
+    // simulated live collaborators only on the shared sample board
+    if (this.state.room !== DEMO_ROOM) return;
+    this._liveTimer = setInterval(() => this.liveTick(), 9000);
+  },
+  liveTick() {
+    if (this.state.step !== "app" || this.state.room !== DEMO_ROOM) return;
+    const ev = SCRIPT[this.state.tick % SCRIPT.length];
+    this.setState(s => {
+      let people = s.people.slice();
+      let freshId = null;
+      if (ev.person && !people.some(p => p.id === ev.person.id)) { people.push(clone(ev.person)); freshId = ev.person.id; }
+      if (ev.patch) { people = people.map(p => p.id === ev.patch.id ? Object.assign({}, p, clone(ev.patch)) : p); freshId = ev.patch.id; }
+      const fresh = Object.assign({}, s.fresh);
+      if (freshId) fresh[freshId] = ev.who;
+      return {
+        people, fresh, tick: s.tick + 1,
+        feed: [{ who: ev.who, i: ev.i, c: ev.c, text: ev.text, t: ev.t }].concat(s.feed),
+        log: this.logEntry(s, ev.person ? "added" : "edited", ev.person ? ev.person.name : (ev.patch ? (s.people.find(p => p.id === ev.patch.id) || {}).name : ""), ev.person ? "add" : "edit", ev.logDetail || null, ev.who, ev.i, ev.c),
+        toast: { text: ev.who + " " + ev.text, i: ev.i, c: ev.c }
+      };
+    });
+    this.flashToast();
+  },
+
+  pushUndo() { this.setState(s => ({ undoStack: s.undoStack.slice(-9).concat([clone(s.people)]) })); },
+
+  openNew(parentId) {
+    this.pushUndo();
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartner: "", draftPartnerBorn: "", draftPartnerDied: "", draftPartnerPlace: "", draftMore: false });
+  },
+  openEdit(id) {
+    const p = this.state.people.find(x => x.id === id);
+    this.setState({
+      sheet: "edit", editId: id, editIsNew: false,
+      draftName: p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
+      draftNote: p.note || "", draftPartner: p.partner ? p.partner.name : "",
+      draftPartnerBorn: p.partner && p.partner.born ? p.partner.born : "",
+      draftPartnerDied: p.partner && p.partner.died ? p.partner.died : "",
+      draftPartnerPlace: p.partner && p.partner.place ? p.partner.place : "",
+      draftMore: !!p.partner
+    });
+  },
+  saveEdit() {
+    const s = this.state, name = s.draftName.trim();
+    if (!name) return;
+    const fields = {
+      name, born: s.draftBorn, died: s.draftDied, place: s.draftPlace, note: s.draftNote,
+      partner: s.draftPartner.trim() ? { name: s.draftPartner.trim(), born: s.draftPartnerBorn, died: s.draftPartnerDied, place: s.draftPartnerPlace } : null
+    };
+    this.pushUndo();
+    this.setState(st => {
+      let people, toastText, dupFound = null;
+      if (st.editIsNew) {
+        const dup = st.people.find(p => p.name.toLowerCase() === name.toLowerCase());
+        dupFound = dup || null;
+        const person = Object.assign({ id: "p" + Date.now(), parentId: st.editParent || null, addedBy: st.myName || "You" }, fields);
+        if (dup) { person.flag = true; }
+        people = st.people.map(p => (dup && p.id === dup.id) ? Object.assign({}, p, { flag: true }) : p).concat([person]);
+        toastText = dup ? name + " added — flagged next to " + dup.name + " for a chat" : name + " is on the tree";
+      } else {
+        people = st.people.map(p => p.id === st.editId ? Object.assign({}, p, fields) : p);
+        toastText = "Saved " + name;
+      }
+      return {
+        people, sheet: null, selected: null,
+        feed: [{ who: st.myName || "You", i: this.initials(st.myName || "You"), c: "#201e1d", text: (st.editIsNew ? "added " : "edited ") + name, t: this.clock() }].concat(st.feed),
+        log: this.logEntry(st, st.editIsNew ? "added" : "edited", name, st.editIsNew ? "add" : "edit",
+          st.editIsNew ? (dupFound ? "flagged as a possible duplicate" : null) : "details changed"),
+        toast: { text: toastText, i: this.initials(st.myName || "You"), c: "#201e1d" }
+      };
+    });
+    this.flashToast();
+  },
+  clock() { const d = new Date(); let hh = d.getHours() % 12 || 12; return hh + ":" + String(d.getMinutes()).padStart(2, "0"); },
+  removePerson() {
+    const id = this.state.deleteId;
+    const ids = [id].concat(this.descendants(id));
+    this.pushUndo();
+    const gone = this.state.people.find(p => p.id === id);
+    const extra = ids.length - 1;
+    this.setState(s => ({
+      people: s.people.filter(p => ids.indexOf(p.id) === -1),
+      sheet: null, deleteId: null, selected: null,
+      log: this.logEntry(s, "removed", gone ? gone.name : "someone", "remove",
+        extra ? "and the " + extra + " " + (extra === 1 ? "person" : "people") + " below them" : null),
+      toast: { text: "Removed. Undo brings them back.", i: "↶", c: "#8c491a" }
+    }));
+    this.flashToast();
+  },
+  descendants(id, out) {
+    out = out || [];
+    this.kidsOf(id).forEach(k => { out.push(k.id); this.descendants(k.id, out); });
+    return out;
+  },
+
+  flatten(forBig, expandAll) {
+    const s = this.state, q = s.query.trim().toLowerCase();
+    const ind = forBig ? 42 : 21;
+    // Indent per generation, but taper deep levels so long names keep a usable
+    // width on a narrow phone. Connectors are derived from these offsets, so
+    // they stay aligned whatever the taper.
+    const cap = forBig ? 99 : 4, stepAfter = forBig ? ind : 8;
+    const indentAt = d => d <= cap ? d * ind : cap * ind + (d - cap) * stepAfter;
+    const stub = (a, b) => Math.max(6, Math.round((indentAt(a) - indentAt(b)) * 0.55));
+    const rows = [];
+    const matches = p => !q || [p.name, p.place, p.note, p.partner && p.partner.name, p.born, p.addedBy].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
+    const walk = (parentId, depth) => {
+      const list = this.kidsOf(parentId);
+      list.forEach((p, i) => {
+        const g = this.gen(depth);
+        const collapsed = !expandAll && !!s.collapsed[p.id] && !q;
+        const kids = this.kidsOf(p.id);
+        const isFresh = !!s.fresh[p.id];
+        const detail = [p.place, p.note].filter(Boolean).join(" · ");
+        rows.push({
+          isCard: true, isAdd: false, id: p.id, name: p.name, years: this.years(p),
+          initials: this.initials(p.name), detail: detail,
+          partnerName: p.partner ? p.partner.name : null,
+          partnerYears: p.partner ? this.years(p.partner) : "",
+          color: g.color, soft: g.soft, depth: depth, pad: indentAt(depth),
+          ribLeft: depth ? indentAt(depth - 1) + 6 : 0, ribW: depth ? stub(depth, depth - 1) : Math.round(ind * 0.55),
+          ribColor: this.gen(Math.max(0, depth - 1)).color,
+          showRib: depth > 0, showSpine: depth > 0 && i < list.length - 1,
+          borderColor: s.selected === p.id ? g.color : (isFresh ? this.accent() : (matches(p) && q ? g.color : "#dcd3c4")),
+          borderW: s.selected === p.id ? 3 : (isFresh || (q && matches(p)) ? 2 : 1),
+          dim: q && !matches(p) ? 0.32 : 1,
+          hasKids: kids.length > 0, below: this.below(p.id),
+          chevron: collapsed ? "▸" : "▾",
+          selected: s.selected === p.id,
+          flagged: !!p.flag,
+          onFlag: () => this.setState({ sheet: "flag" }),
+          byLine: isFresh ? "just added by " + s.fresh[p.id] : "added by " + (p.addedBy || "someone"),
+          byColor: isFresh ? this.accent() : "#c0b6a5",
+          onToggle: () => this.setState(st => ({ collapsed: Object.assign({}, st.collapsed, { [p.id]: !st.collapsed[p.id] }) })),
+          onSelect: () => this.setState(st => ({ selected: st.selected === p.id ? null : p.id })),
+          onAdd: () => this.openNew(p.id),
+          onEdit: () => this.openEdit(p.id),
+          onSibling: () => this.openNew(p.parentId),
+          onDelete: () => this.setState({ sheet: "delete", deleteId: p.id })
+        });
+        if (!collapsed && kids.length) {
+          walk(p.id, depth + 1);
+          if (!forBig) {
+            const cg = this.gen(depth + 1);
+            rows.push({
+              isCard: false, isAdd: true, id: p.id + "-add", pad: indentAt(depth + 1),
+              ribLeft: indentAt(depth) + 6, ribW: stub(depth + 1, depth), ribColor: cg.color,
+              showRib: true, showSpine: false, dim: 1, color: cg.color,
+              label: "+ Add another child of " + p.name.split(" ")[0],
+              onAdd: () => this.openNew(p.id)
+            });
+          }
+        }
+      });
+    };
+    walk(null, 0);
+    return rows;
+  },
+
+  renderVals() {
+    const s = this.state;
+    const total = s.people.length + s.people.filter(p => p.partner && p.partner.name).length;
+    const gens = s.people.reduce((m, p) => Math.max(m, this.depthOf(p) + 1), 1);
+    const rows = this.flatten(false);
+    const anyMatch = rows.some(r => r.isCard && r.dim === 1);
+    const contributors = [
+      { name: (s.myName || "You") + " (you)", i: this.initials(s.myName || "You"), c: "#201e1d", when: "now" },
+      { name: "Rita", i: "R", c: "#c67139", when: "1m ago" },
+      { name: "Tío Tomás", i: "T", c: "#7a8a5e", when: "2m ago" },
+      { name: "Danny", i: "D", c: "#8c491a", when: "4m ago" },
+      { name: "Javi", i: "J", c: "#82796a", when: "6m ago" }
+    ];
+    const dupName = (s.editIsNew && s.draftName.trim())
+      ? (s.people.find(p => p.name.toLowerCase() === s.draftName.trim().toLowerCase()) || {}).name : null;
+    const delP = s.deleteId ? s.people.find(p => p.id === s.deleteId) : null;
+    const delBelow = s.deleteId ? this.below(s.deleteId) : 0;
+    const showContrib = s.room === DEMO_ROOM ? contributors : contributors.slice(0, 1);
+
+    return {
+      isLanding: s.step === "landing",
+      isName: s.step === "name", isBoardSetup: s.step === "board", isApp: s.step === "app",
+      beats: [
+        { n: "1", c: "#c67139", title: "Say who you are", body: "Your name rides along with everyone you add." },
+        { n: "2", c: "#7a8a5e", title: "Add your branch", body: "A name is enough — details whenever you like." },
+        { n: "3", c: "#8c491a", title: "Watch it fill in", body: "Multiple phones, one tree. Duplicates get flagged, never overwritten." }
+      ],
+      onStartNow: () => this.setState({ step: "name", joining: false }),
+      onBackToLanding: () => this.setState({ step: "landing", joining: false }),
+      onBackToName: () => this.setState({ step: "name" }),
+      onGoLanding: () => { clearInterval(this._liveTimer); this.setState({ step: "landing", sheet: null, selected: null, joining: false, projection: false }); },
+      onLeaveBoard: () => { clearInterval(this._liveTimer); this.setState({ step: "board", sheet: null, selected: null, projection: false }); },
+      onLandingJoin: () => this.setState({ step: "name", joining: true }),
+      myName: s.myName,
+      onMyName: e => this.setState({ myName: e.target.value }),
+      onNameNext: () => { if (s.myName.trim()) this.setState({ step: "board", room: s.joining ? s.room : this.newCode() }); },
+      joining: s.joining, notJoining: !s.joining,
+      codeInput: s.codeInput,
+      onCodeInput: e => this.setState({ codeInput: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8), codeError: null }),
+      onHaveCode: () => this.setState({ joining: true }),
+      onNewBoard: () => this.setState({ joining: false, room: this.newCode() }),
+      onStartBoard: () => this.enterRoom(s.room, true),
+      onJoinBoard: () => {
+        const code = s.codeInput.trim();
+        if (code.length < 4) { this.setState({ codeError: "Board codes are six characters — check the one you were sent." }); return; }
+        this.enterRoom(code, false);
+      },
+      codeError: s.codeError,
+      room: s.room, shared: s.shared,
+      boardTitle: s.joining ? "Join the family board" : "Create your board",
+      familyName: s.familyName,
+      onFamilyName: e => this.setState({ familyName: e.target.value }),
+      countLine: total + " people · " + gens + " gens",
+      peopleCount: total,
+      gensCount: gens,
+      hereLabel: (s.room === DEMO_ROOM ? "5 here" : "1 here"),
+      isProjection: s.projection,
+      onOpenProjection: () => this.setState({ projection: true, sheet: null, selected: null }),
+      onExitProjection: () => this.setState({ projection: false }),
+      bigRows: this.flatten(true),
+      bigLog: s.log.slice(0, 14).map(l => ({ who: l.who, i: l.i, c: l.c, verb: l.verb, target: l.target, when: l.when, verbColor: l.kind === "remove" ? "#8c491a" : (l.kind === "add" ? "#56633f" : "#645c50") })),
+      zoom: s.zoom, zoomLabel: Math.round(s.zoom * 100) + "%",
+      onZoomIn: () => this.setState({ zoom: Math.min(1.5, +(s.zoom + 0.1).toFixed(2)) }),
+      onZoomOut: () => this.setState({ zoom: Math.max(0.7, +(s.zoom - 0.1).toFixed(2)) }),
+      onUndo: () => this.setState(st => st.undoStack.length
+        ? { people: st.undoStack[st.undoStack.length - 1], undoStack: st.undoStack.slice(0, -1), log: this.logEntry(st, "undid", "the last change", "undo"), toast: { text: "Put back the way it was", i: "↶", c: "#7a8a5e" } }
+        : { toast: { text: "Nothing to undo yet", i: "↶", c: "#82796a" } }, () => this.flashToast()),
+      query: s.query,
+      onQuery: e => this.setState({ query: e.target.value }),
+      onExpandAll: () => this.setState({ collapsed: {} }),
+      onCollapseAll: () => this.setState(st => {
+        const c = {};
+        st.people.forEach(p => { if (this.kidsOf(p.id).length) c[p.id] = true; });
+        return { collapsed: c };
+      }),
+      legend: GEN.slice(0, Math.max(2, Math.min(GEN.length, gens))),
+      rows: rows,
+      noMatch: !!s.query.trim() && !anyMatch,
+      onAddRoot: () => this.openNew(null),
+      contributors: showContrib,
+      feed: s.feed.slice(0, 6),
+      sheetOpen: !!s.sheet,
+      onCloseSheet: () => this.setState({ sheet: null, deleteId: null }),
+      isLogSheet: s.sheet === "log",
+      onOpenLog: () => this.setState({ sheet: "log" }),
+      logCount: s.log.length,
+      logFilters: [
+        { key: "all", label: "Everything" },
+        { key: "add", label: "Added" },
+        { key: "edit", label: "Edited" },
+        { key: "remove", label: "Removed" },
+        { key: "flag", label: "Duplicates" },
+        { key: "export", label: "Downloads" }
+      ].map(o => ({
+        key: o.key, label: o.label,
+        bg: s.logFilter === o.key ? this.accent() : "transparent",
+        fg: s.logFilter === o.key ? "#fff2eb" : "#645c50",
+        bd: s.logFilter === o.key ? this.accent() : "#dcd3c4",
+        onPick: () => this.setState({ logFilter: o.key })
+      })),
+      logRows: s.log
+        .filter(l => s.logFilter === "all" || l.kind === s.logFilter || (s.logFilter === "flag" && l.kind === "merge"))
+        .map(l => ({
+          who: l.who, i: l.i, c: l.c, verb: l.verb, target: l.target, detail: l.detail || null, when: l.when,
+          verbColor: l.kind === "remove" ? "#8c491a" : (l.kind === "add" ? "#56633f" : (l.kind === "export" ? "#56633f" : "#645c50"))
+        })),
+      isFlagSheet: s.sheet === "flag",
+      flagPair: s.people.filter(p => p.flag).slice(0, 2).map(p => ({
+        name: p.name, meta: [this.years(p), p.place].filter(Boolean).join(" · "), addedBy: p.addedBy
+      })),
+      thread: s.thread,
+      replyText: s.replyText,
+      onReply: e => this.setState({ replyText: e.target.value }),
+      onSendReply: () => {
+        const t = s.replyText.trim(); if (!t) return;
+        this.setState(st => ({ replyText: "", thread: st.thread.concat([{ who: st.myName || "You", i: this.initials(st.myName || "You"), c: "#201e1d", text: t }]) }));
+      },
+      onKeepBoth: () => {
+        const pair = s.people.filter(p => p.flag).slice(0, 2);
+        if (pair.length < 2) return;
+        this.setState(st => ({
+          sheet: null,
+          log: this.logEntry(st, "kept both", pair[0].name + " and " + pair[1].name, "flag", "left flagged for the family to settle"),
+          toast: { text: "Kept both. Still flagged for later.", i: "✓", c: "#7a8a5e" }
+        }), () => this.flashToast());
+      },
+      onMerge: () => {
+        const pair = s.people.filter(p => p.flag).slice(0, 2);
+        if (pair.length < 2) return;
+        this.pushUndo();
+        this.setState(st => ({
+          sheet: null, selected: null,
+          people: st.people.filter(p => p.id !== pair[1].id)
+            .map(p => p.id === pair[0].id ? Object.assign({}, p, { flag: false, place: p.place || pair[1].place }) : p),
+          log: this.logEntry(st, "merged", pair[1].name + " into " + pair[0].name, "merge", "one record now — the other name stays in this log"),
+          toast: { text: "Merged into " + pair[0].name + ". Everyone sees it now.", i: "✓", c: this.accent() }
+        }), () => this.flashToast());
+      },
+      isEditSheet: s.sheet === "edit", isDeleteSheet: s.sheet === "delete",
+      isBoardSheet: s.sheet === "board", isShareSheet: s.sheet === "share",
+      isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
+      onOpenBoard: () => this.setState({ sheet: "board" }),
+      onOpenShare: () => this.setState({ sheet: "share" }),
+      onOpenDownload: () => this.setState({ sheet: "download" }),
+      onOpenUpgrade: () => this.setState({ sheet: "upgrade", payError: null }),
+      onDownloadPdf: () => this.downloadTree("pdf", total),
+      onDownloadImage: () => this.downloadImage(total),
+      expiryDate: this.plusDays(3),
+      renewDate: this.plusDays(365),
+      isPaid: s.subscribed, isUnpaid: !s.subscribed,
+      saveButtonLabel: s.subscribed ? "Link" : "Save",
+      upgradeTitle: s.subscribed ? "Your tree is live" : "Keep the tree alive",
+      upgradeSub: s.subscribed
+        ? "Share this link with anyone in the family — it always shows the latest tree."
+        : "Your own link to this tree, updating in real time as the family adds to it.",
+      liveLink: "roundtable.family/" + s.room.toLowerCase(),
+      onCopyLink: () => { this.copy("https://roundtable.family/" + s.room.toLowerCase()); this.setState({ sheet: null, toast: { text: "Link copied — paste it in the family thread", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
+      planPerks: [
+        "A private link that always shows the latest tree — no app to install.",
+        "Everyone keeps adding: new babies, new marriages, corrections, years later.",
+        "The full change log stays with it, so every edit keeps its name and date."
+      ],
+      payEmail: s.payEmail, payCard: s.payCard, payExp: s.payExp, payCvc: s.payCvc, payName: s.payName, payError: s.payError,
+      onPayEmail: e => this.setState({ payEmail: e.target.value }),
+      onPayCard: e => this.setState({ payCard: e.target.value }),
+      onPayExp: e => this.setState({ payExp: e.target.value }),
+      onPayCvc: e => this.setState({ payCvc: e.target.value }),
+      onPayName: e => this.setState({ payName: e.target.value }),
+      onSubscribe: () => {
+        if (s.payEmail.indexOf("@") < 1) { this.setState({ payError: "We need an email address to send the link to." }); return; }
+        if (s.payCard.replace(/\D/g, "").length < 12) { this.setState({ payError: "That card number looks short." }); return; }
+        this.setState(st => ({
+          sheet: null, payError: null, subscribed: true,
+          log: this.logEntry(st, "kept", "the board live for a year", "board", "link emailed to " + st.payEmail),
+          toast: { text: "Your link is live — sent to " + st.payEmail, i: "✓", c: "#7a8a5e" }
+        }), () => this.flashToast());
+      },
+      editTitle: s.editIsNew ? "Add a person" : "Edit person",
+      editSub: s.editIsNew ? "A name is all we need. Details any time later." : "Everyone on the board sees the change.",
+      draftName: s.draftName, draftBorn: s.draftBorn, draftDied: s.draftDied,
+      draftPlace: s.draftPlace, draftNote: s.draftNote, draftPartner: s.draftPartner, draftMore: s.draftMore,
+      onDraftName: e => this.setState({ draftName: e.target.value }),
+      onDraftBorn: e => this.setState({ draftBorn: e.target.value }),
+      onDraftDied: e => this.setState({ draftDied: e.target.value }),
+      onDraftPlace: e => this.setState({ draftPlace: e.target.value }),
+      onDraftNote: e => this.setState({ draftNote: e.target.value }),
+      onDraftPartner: e => this.setState({ draftPartner: e.target.value }),
+      draftPartnerBorn: s.draftPartnerBorn, draftPartnerDied: s.draftPartnerDied, draftPartnerPlace: s.draftPartnerPlace,
+      hasPartner: !!s.draftPartner.trim(),
+      onDraftPartnerBorn: e => this.setState({ draftPartnerBorn: e.target.value }),
+      onDraftPartnerDied: e => this.setState({ draftPartnerDied: e.target.value }),
+      onDraftPartnerPlace: e => this.setState({ draftPartnerPlace: e.target.value }),
+      onRemovePartner: () => this.setState({ draftPartner: "", draftPartnerBorn: "", draftPartnerDied: "", draftPartnerPlace: "" }),
+      onToggleMore: () => this.setState({ draftMore: !s.draftMore }),
+      moreLabel: s.draftMore ? "Hide dates, place, partner" : "Add dates, place, a spouse or partner  →",
+      dupWarn: dupName ? "Someone already added a " + dupName + ". Add yours anyway — both stay, flagged for a family chat." : null,
+      saveLabel: s.draftName.trim() ? (s.editIsNew ? "Add " + s.draftName.trim() : "Save " + s.draftName.trim()) : "Save person",
+      onSaveEdit: () => this.saveEdit(),
+      onCancelEdit: () => this.setState({ sheet: null }),
+      deleteBody: delP ? (delP.name + " comes off the tree" + (delBelow ? ", along with the " + delBelow + " " + (delBelow === 1 ? "person" : "people") + " below them" : "") + (s.shared ? ", on everyone’s screen" : "") + ". Undo brings them back.") : "",
+      onConfirmDelete: () => this.removePerson(),
+      invite: "Help us build the " + s.familyName + " tree at the reunion.\n\n1. Open the link\n2. Tap “I have a code already”\n3. Type in the board code: " + s.room + "\n\nThen add the relatives you know best. Takes about two minutes.",
+      onCopyInvite: () => { this.copy(this.renderVals().invite); this.setState({ sheet: null, toast: { text: "Message copied — paste it in the group text", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
+      onTextIt: () => {
+        const body = encodeURIComponent("Join our family tree on Roundtable — board code " + s.room + " at roundtable.family");
+        window.open("sms:?&body=" + body, "_blank");
+        this.setState({ sheet: null, toast: { text: "Opening Messages with the code", i: "✓", c: this.accent() } }, () => this.flashToast());
+      },
+      posterLine: "A printable sheet of all " + total + " people, in the order they sit on the tree.",
+      toastText: s.toast ? s.toast.text : null,
+      toastInitial: s.toast ? s.toast.i : "",
+      toastColor: s.toast ? s.toast.c : "#c67139"
+    };
+  },
+
+  copy(text) { try { navigator.clipboard && navigator.clipboard.writeText(text); } catch (e) {} },
+
+  downloadTree(kind, total) {
+    // Real, free export: a self-contained printable HTML of the whole tree + log.
+    const s = this.state;
+    const rows = this.flatten(false, true).filter(r => r.isCard);
+    const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    const rowHtml = rows.map(r => `<div style="margin-left:${r.depth * 22}px;padding:8px 12px;border-left:5px solid ${r.color};margin-bottom:6px">
+        <strong style="font-size:16px">${esc(r.name)}</strong> <span style="color:#82796a">${esc(r.years)}</span>
+        ${r.partnerName ? ` &nbsp;♥ ${esc(r.partnerName)} <span style="color:#82796a">${esc(r.partnerYears)}</span>` : ""}
+        ${r.detail ? `<div style="color:#645c50;font-size:13px">${esc(r.detail)}</div>` : ""}
+        <div style="color:#c0b6a5;font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(r.byLine)}</div>
+      </div>`).join("");
+    const logHtml = s.log.map(l => `<div style="padding:6px 0;border-top:1px solid #dcd3c4;font-size:13px"><strong>${esc(l.who)}</strong> ${esc(l.verb)} ${esc(l.target)}${l.detail ? ` — <span style="color:#645c50">${esc(l.detail)}</span>` : ""} <span style="color:#82796a;font-family:monospace;font-size:11px">${esc(l.when)}</span></div>`).join("");
+    const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(s.familyName || "Family")} — Roundtable</title>
+      <style>body{font-family:Georgia,serif;color:#201e1d;max-width:820px;margin:40px auto;padding:0 24px;background:#f5ead8}
+      h1{font-size:38px;margin:0}h2{margin-top:40px}@media print{body{background:#fff}}</style></head>
+      <body onload="${kind === 'pdf' ? 'window.print()' : ''}">
+      <div style="text-transform:uppercase;letter-spacing:.16em;color:#8c491a;font-size:12px">Board ${esc(s.room)} · ${esc(total)} people</div>
+      <h1>${esc(s.familyName || "Our Family")}</h1>
+      <h2>The tree</h2>${rowHtml}
+      <h2>Change log</h2>${logHtml}
+      <p style="color:#82796a;font-size:12px;margin-top:30px">Made with Roundtable — the family tree you build together.</p>
+      </body></html>`;
+    const blob = new Blob([doc], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (s.familyName || "family").replace(/[^a-z0-9]+/gi, "-").toLowerCase() + "-tree.html";
+    if (kind === "pdf") { window.open(url, "_blank"); }
+    else { document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    this.setState(st => ({
+      sheet: null,
+      log: this.logEntry(st, "downloaded", kind === "pdf" ? "the tree as a PDF" : "the tree as an image", "export"),
+      toast: { text: kind === "pdf" ? "Printable sheet opened — " + total + " people, log included" : "Tree saved — open it any time", i: "✓", c: this.accent() }
+    }), () => this.flashToast());
+  },
+
+  // Renders the whole tree + change log to a real PNG (native SVG → canvas),
+  // so "Download as image" produces an actual image of the tree. Falls back to
+  // the printable HTML if the browser can't export the canvas.
+  downloadImage(total) {
+    const s = this.state;
+    const rows = this.flatten(false, true).filter(r => r.isCard);
+    const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    const W = 980, P = 46, headTop = 58, treeTop = 132, rowH = 66, logRowH = 26;
+    const logRows = s.log.slice(0, 40);
+    const treeH = rows.length * rowH;
+    const logTop = treeTop + treeH + 46;
+    const H = logTop + 30 + logRows.length * logRowH + 44;
+    let b = "";
+    b += `<rect x="0" y="0" width="${W}" height="${H}" fill="#f5ead8"/>`;
+    b += `<text x="${P}" y="${headTop}" font-family="Georgia,serif" font-weight="bold" font-size="40" fill="#201e1d">${esc(s.familyName || "Our Family")}</text>`;
+    b += `<text x="${P}" y="${headTop + 30}" font-family="Arial,sans-serif" font-size="15" letter-spacing="2" fill="#8c491a">BOARD ${esc(s.room)} · ${esc(total)} PEOPLE</text>`;
+    rows.forEach((r, i) => {
+      const y = treeTop + i * rowH;
+      const x = P + Math.min(r.depth, 6) * 28;
+      const midY = y + 23;
+      b += `<rect x="${x}" y="${y}" width="6" height="${rowH - 16}" rx="3" fill="${r.color}"/>`;
+      const ax = x + 32;
+      b += `<circle cx="${ax}" cy="${midY}" r="17" fill="${r.soft}" stroke="${r.color}" stroke-width="2.5"/>`;
+      b += `<text x="${ax}" y="${midY + 4}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="12" fill="${r.color}">${esc(r.initials)}</text>`;
+      const tx = ax + 30;
+      b += `<text x="${tx}" y="${midY - 3}" font-family="Georgia,serif" font-weight="bold" font-size="20" fill="#201e1d">${esc(r.name)}<tspan font-family="Arial,sans-serif" font-weight="normal" font-size="12" fill="#82796a">   ${esc(r.years)}</tspan></text>`;
+      const sub = [];
+      if (r.partnerName) sub.push("♥ " + r.partnerName + (r.partnerYears ? " " + r.partnerYears : ""));
+      if (r.detail) sub.push(r.detail);
+      if (sub.length) b += `<text x="${tx}" y="${midY + 15}" font-family="Arial,sans-serif" font-size="12" fill="#645c50">${esc(sub.join("   ·   "))}</text>`;
+      b += `<text x="${tx}" y="${midY + 31}" font-family="Arial,sans-serif" font-size="9" letter-spacing="1" fill="#c0b6a5">${esc((r.byLine || "").toUpperCase())}</text>`;
+    });
+    b += `<text x="${P}" y="${logTop}" font-family="Georgia,serif" font-weight="bold" font-size="22" fill="#201e1d">Change log</text>`;
+    logRows.forEach((l, i) => {
+      const y = logTop + 28 + i * logRowH;
+      b += `<text x="${P}" y="${y}" font-family="Arial,sans-serif" font-size="13" fill="#201e1d"><tspan font-weight="bold">${esc(l.who)}</tspan> ${esc(l.verb)} ${esc(l.target)}<tspan fill="#82796a" font-size="11">   ${esc(l.when)}</tspan></text>`;
+    });
+    b += `<text x="${P}" y="${H - 20}" font-family="Arial,sans-serif" font-size="11" fill="#82796a">Made with Roundtable — the family tree you build together.</text>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${b}</svg>`;
+    const fname = ((s.familyName || "family").replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/^-+|-+$/g, "") || "family") + "-tree.png";
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+    const finish = () => this.setState(st => ({
+      sheet: null,
+      log: this.logEntry(st, "downloaded", "the tree as an image", "export"),
+      toast: { text: "Image saved — " + total + " people, log included", i: "✓", c: this.accent() }
+    }), () => this.flashToast());
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = 2, canvas = document.createElement("canvas");
+        canvas.width = W * scale; canvas.height = H * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(blob => {
+          if (!blob) { this.downloadTree("image", total); return; }
+          const purl = URL.createObjectURL(blob);
+          const a = document.createElement("a"); a.href = purl; a.download = fname;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(purl), 60000);
+          finish();
+        }, "image/png");
+      } catch (e) { URL.revokeObjectURL(url); this.downloadTree("image", total); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); this.downloadTree("image", total); };
+    img.src = url;
+  }
+};
+
+function clone(x) { return JSON.parse(JSON.stringify(x)); }
+
+/* ------------------------------- view ------------------------------------ */
+const F = "font-family:Figtree, system-ui, sans-serif";
+
+function btn(props, ...kids) {
+  props = Object.assign({}, props);
+  props.style = F + "; " + (props.style || "");
+  return h("button", props, ...kids);
+}
+function inp(props) {
+  props = Object.assign({}, props);
+  props.style = F + "; " + (props.style || "");
+  if (props.onChange) { props.onInput = props.onChange; delete props.onChange; }
+  return h("input", props);
+}
+
+function view(V) {
+  let screen;
+  if (V.isLanding) screen = viewLanding(V);
+  else if (V.isName) screen = viewName(V);
+  else if (V.isBoardSetup) screen = viewBoard(V);
+  else screen = viewApp(V);
+  return h("div", { key: "root", class: "screen" }, screen);
+}
+
+function viewLanding(V) {
+  return h("div", { key: "landing", style: "flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; padding:24px 24px 22px; gap:15px", class: "noscroll" },
+    h("div", { style: "display:flex; align-items:center; gap:12px" },
+      h("div", { style: "width:52px; height:52px; border-radius:999px; background:#c67139; display:flex; align-items:center; justify-content:center; color:#fff2eb; font-family:Caprasimo, serif; font-size:24px" }, "R"),
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px; letter-spacing:-.01em" }, "Roundtable")
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:12px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:30px; line-height:1.06; text-wrap:pretty" }, "The family tree you build together, and keep adding to."),
+      h("div", { style: "font-size:14px; line-height:1.5; color:#645c50; text-wrap:pretty" }, "Share one board code. Everyone fills in the branch they know best, and the tree keeps growing — new babies, new marriages, years later.")
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:10px" },
+      V.beats.map((b, i) => h("div", { key: "beat" + i, style: "display:flex; align-items:flex-start; gap:11px; padding:11px 14px; border-radius:20px; background:#ebddc5" },
+        h("span", { style: "width:24px; height:24px; flex:none; border-radius:999px; background:" + b.c + "; color:#fff2eb; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center" }, b.n),
+        h("span", { style: "display:flex; flex-direction:column; gap:1px" },
+          h("span", { style: "font-size:14px; font-weight:800" }, b.title),
+          h("span", { style: "font-size:12px; line-height:1.4; color:#645c50" }, b.body)
+        )
+      ))
+    ),
+    h("div", { style: "flex:1 1 10px; min-height:10px" }),
+    h("div", { style: "position:relative; height:124px; flex:none; border-radius:20px; overflow:hidden; background:repeating-linear-gradient(45deg,#dcd3c4 0 8px,#eee7db 8px 16px); border:1.5px solid #dcd3c4; display:flex; align-items:center; justify-content:center" },
+      btn({ title: "Play the 40-second intro", style: "width:52px; height:52px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; font-size:20px; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.28)", hover: "background:#b2622d" }, "▶"),
+      h("div", { style: "position:absolute; left:14px; bottom:12px; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#645c50" }, "video — 40 sec, how a board works")
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:9px; padding-top:4px" },
+      btn({ onClick: V.onStartNow, style: "font-size:17px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.2)", hover: "background:#b2622d" }, "Start now"),
+      btn({ onClick: V.onLandingJoin, style: "font-size:13px; font-weight:700; padding:12px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "I have a board code"),
+      h("div", { style: "font-size:12px; line-height:1.5; color:#82796a; text-align:center" }, "Free for the afternoon. No accounts, no subscriptions.")
+    )
+  );
+}
+
+function backBtn(onClick) {
+  return btn({ onClick, style: "align-self:flex-start; display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; padding:9px 16px 9px 12px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+    h("span", { style: "font-size:15px" }, "←"), h("span", null, "Back"));
+}
+
+function viewName(V) {
+  return h("div", { key: "name", style: "flex:1; display:flex; flex-direction:column; padding:20px 26px 30px; gap:20px; overflow-y:auto", class: "noscroll" },
+    backBtn(V.onBackToLanding),
+    h("div", { style: "width:70px; height:70px; border-radius:999px; background:#c67139; display:flex; align-items:center; justify-content:center; color:#fff2eb; font-family:Caprasimo, serif; font-size:28px" }, "R"),
+    h("div", { style: "font-family:Caprasimo, serif; font-size:42px; line-height:1.02; text-wrap:pretty" }, "Who's adding names?"),
+    h("div", { style: "font-size:16px; line-height:1.5; color:#645c50; text-wrap:pretty" }, "Your name sits next to everyone you add, so the family knows who to ask when a date looks wrong."),
+    h("div", { style: "display:flex; flex-direction:column; gap:10px; margin-top:4px" },
+      h("label", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Your name"),
+      inp({ value: V.myName, onChange: V.onMyName, placeholder: "e.g. Aunt Rita", style: "font-size:19px; padding:17px 22px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none; width:100%" }),
+      btn({ onClick: V.onNameNext, style: "font-size:17px; font-weight:700; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Continue")
+    )
+  );
+}
+
+function viewBoard(V) {
+  return h("div", { key: "board", style: "flex:1; overflow-y:auto; padding:22px 22px 28px; display:flex; flex-direction:column; gap:16px", class: "noscroll" },
+    backBtn(V.onBackToName),
+    h("div", { style: "font-family:Caprasimo, serif; font-size:32px; line-height:1.05" }, V.boardTitle),
+    h("div", { style: "padding:20px; border-radius:28px; border:1.5px solid #c67139; background:#f9f4ed; display:flex; flex-direction:column; gap:14px" },
+      h("div", { style: "font-size:14px; line-height:1.5; color:#645c50" }, "Everyone opens Roundtable on their own phone, types this board code, and adds the relatives they know best. The tree fills in as people work."),
+      V.joining
+        ? h("div", { style: "display:flex; flex-direction:column; gap:12px" },
+            h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Board code"),
+            inp({ value: V.codeInput, onChange: V.onCodeInput, placeholder: "ABC123", style: "font-family:'IBM Plex Mono', monospace; font-size:24px; letter-spacing:.2em; text-align:center; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+            V.codeError ? h("div", { style: "font-size:13px; font-weight:700; line-height:1.45; color:#8c491a" }, V.codeError) : null,
+            btn({ onClick: V.onJoinBoard, style: "font-size:16px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer" }, "Join board"),
+            btn({ onClick: V.onNewBoard, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Make a new board instead")
+          )
+        : h("div", { style: "display:flex; flex-direction:column; gap:12px" },
+            h("div", { style: "padding:16px; border-radius:24px; background:#ffe1d0; text-align:center" },
+              h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#8c491a" }, "Your board code"),
+              h("div", { style: "font-family:Caprasimo, serif; font-size:38px; letter-spacing:.16em; color:#8c491a; margin-top:4px" }, V.room)
+            ),
+            btn({ onClick: V.onStartBoard, style: "font-size:16px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer" }, "Create board"),
+            btn({ onClick: V.onHaveCode, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "I have a code already")
+          ),
+      h("div", { style: "padding:14px 16px; border-radius:20px; background:#f0fae1; font-size:13px; line-height:1.5; color:#3d472b" }, "A board code is a doorway, not a lock. Anyone who types it can read and change these names. Treat it like a poster in the reunion hall.")
+    ),
+    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a; text-align:center" }, "Tip: join code ", h("strong", null, DEMO_ROOM), " to explore the sample family.")
+  );
+}
+
+function chip(onClick, style, ...kids) { return btn({ onClick, style }, ...kids); }
+
+function viewApp(V) {
+  if (V.isProjection) return projection(V);
+  return h("div", { key: "app", style: "flex:1; display:flex; flex-direction:column; min-height:0; position:relative" },
+    appHeader(V),
+    appTree(V),
+    V.toastText ? h("div", { key: "toast", style: "position:absolute; left:18px; right:18px; bottom:24px; padding:14px 18px; border-radius:28px; background:#201e1d; color:#f9f4ed; display:flex; align-items:center; gap:12px; box-shadow:0 12px 32px rgba(46,43,37,.3); animation:riseIn .3s ease" },
+      h("div", { style: "width:26px; height:26px; flex:none; border-radius:999px; background:" + V.toastColor + "; color:#fff2eb; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center" }, V.toastInitial),
+      h("div", { style: "font-size:13px; line-height:1.4" }, V.toastText)
+    ) : null,
+    V.sheetOpen ? h("div", { key: "scrim", onClick: V.onCloseSheet, style: "position:absolute; inset:0; background:rgba(32,30,29,.44)" }) : null,
+    sheets(V)
+  );
+}
+
+function appHeader(V) {
+  return h("div", { style: "flex:none; background:#f9f4ed; border-bottom:1.5px solid #dcd3c4; padding:8px 18px 9px; display:flex; flex-direction:column; gap:7px" },
+    h("div", { style: "display:flex; align-items:center; gap:8px" },
+      btn({ onClick: V.onGoLanding, title: "Roundtable home", style: "font-family:Caprasimo, serif; flex:none; width:32px; height:32px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; font-size:15px; cursor:pointer", hover: "background:#b2622d" }, "R"),
+      btn({ onClick: V.onLeaveBoard, style: "flex:none; display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:7px 13px 7px 11px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+        h("span", { style: "font-size:14px" }, "←"), h("span", null, "Boards"))
+    ),
+    h("div", { style: "display:flex; align-items:center; gap:8px" },
+      inp({ id: "rt-familyname", value: V.familyName, onChange: V.onFamilyName, maxlength: "18", placeholder: "Family name", style: "flex:1; min-width:0; font-family:Caprasimo, serif; font-size:22px; line-height:1.15; color:#201e1d; background:transparent; border:none; outline:none; padding:0; text-overflow:ellipsis" }),
+      btn({ onClick: () => { const el = document.getElementById("rt-familyname"); if (el) { el.focus(); el.select(); } }, title: "Edit family name", "aria-label": "Edit family name", style: "flex:none; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#82796a; font-size:14px; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "✎")
+    ),
+    h("div", { style: "display:flex; align-items:center; gap:6px" },
+      h("div", { style: "flex:none; display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#ebddc5" },
+        btn({ onClick: V.onZoomOut, style: "width:30px; height:30px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:17px; font-weight:700; cursor:pointer" }, "−"),
+        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#645c50; width:38px; text-align:center" }, V.zoomLabel),
+        btn({ onClick: V.onZoomIn, style: "width:30px; height:30px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:17px; font-weight:700; cursor:pointer" }, "+")
+      ),
+      btn({ onClick: V.onUndo, style: "flex:1; font-size:12px; font-weight:700; padding:9px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Undo")
+    ),
+    h("div", { style: "display:flex; align-items:stretch; gap:6px" },
+      btn({ onClick: V.onOpenLog, style: "flex:1; justify-content:center; display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; padding:9px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" },
+        h("span", { style: "display:flex; flex-direction:column; gap:2px" },
+          h("span", { style: "width:13px; height:2px; border-radius:999px; background:#201e1d; display:block" }),
+          h("span", { style: "width:13px; height:2px; border-radius:999px; background:#201e1d; display:block" }),
+          h("span", { style: "width:13px; height:2px; border-radius:999px; background:#201e1d; display:block" })
+        ),
+        h("span", null, "Log"),
+        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; color:#82796a" }, String(V.logCount))
+      ),
+      btn({ onClick: V.onOpenDownload, style: "flex:1; font-size:12px; font-weight:700; padding:9px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Download"),
+      btn({ onClick: V.onOpenUpgrade, style: "flex:1; font-size:12px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
+    ),
+    V.shared ? h("div", { style: "display:flex; align-items:center; flex-wrap:wrap; gap:7px" },
+      btn({ onClick: V.onOpenBoard, style: "flex:none; display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px; border:none; background:#ffe1d0; cursor:pointer" },
+        h("span", { style: "width:8px; height:8px; border-radius:999px; background:#7a8a5e; display:block" }),
+        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:13px; letter-spacing:.12em; font-weight:500; color:#8c491a" }, V.room),
+        h("span", { style: "font-size:12px; font-weight:700; color:#645c50" }, "· " + V.hereLabel)
+      ),
+      btn({ onClick: V.onOpenShare, style: "flex:none; font-size:13px; font-weight:700; padding:8px 14px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Share code"),
+      btn({ onClick: V.onOpenProjection, title: "Full-screen live view for a TV or projector", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:8px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+        h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project")),
+      V.isPaid ? btn({ onClick: V.onOpenUpgrade, style: "flex:none; display:flex; align-items:center; gap:6px; padding:7px 13px; border-radius:999px; border:1.5px solid #7a8a5e; background:#f0fae1; cursor:pointer", hover: "background:#e1eecc" },
+        h("span", { style: "width:16px; height:16px; border-radius:999px; background:#7a8a5e; color:#f0fae1; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center" }, "✓"),
+        h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live")
+      ) : null
+    ) : null,
+    h("div", { style: "display:flex; gap:7px" },
+      inp({ value: V.query, onChange: V.onQuery, placeholder: "Find a name, a town, a year…", style: "flex:1; min-width:0; font-size:14px; padding:11px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+      btn({ onClick: V.onExpandAll, style: "flex:none; font-size:12px; font-weight:700; padding:10px 12px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer" }, "Expand"),
+      btn({ onClick: V.onCollapseAll, style: "flex:none; font-size:12px; font-weight:700; padding:10px 12px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer" }, "Collapse")
+    ),
+    V.isPaid ? h("div", { style: "display:flex; align-items:center; gap:8px; padding:8px 13px; border-radius:999px; background:#f0fae1; border:1.5px solid #ccdbb2" },
+      h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink),
+      h("span", { style: "font-size:11px; font-weight:800; color:#56633f; white-space:nowrap" }, "· renews " + V.renewDate)
+    ) : null,
+    h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.06em; color:#82796a" }, V.countLine),
+    h("div", { style: "display:flex; gap:14px; flex-wrap:wrap" },
+      V.legend.map((g, i) => h("div", { key: "lg" + i, style: "display:flex; align-items:center; gap:6px" },
+        h("span", { style: "width:18px; height:6px; border-radius:999px; background:" + g.color + "; display:block" }),
+        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#82796a" }, g.label)
+      ))
+    )
+  );
+}
+
+function appTree(V) {
+  return h("div", { style: "flex:1; overflow:auto; padding:14px 16px 26px", class: "noscroll" },
+    h("div", { style: "zoom:" + V.zoom + "; display:flex; flex-direction:column" },
+      V.rows.map(r => row(r)),
+      h("div", { key: "addroot", style: "padding-top:14px" },
+        btn({ onClick: V.onAddRoot, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:16px 18px; border-radius:24px; border:2px dashed #c0b6a5; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "+ Start another branch of the family")
+      ),
+      V.noMatch ? h("div", { key: "nomatch", style: "padding:22px 4px; font-size:14px; color:#645c50; line-height:1.5" }, "Nobody matches “" + V.query + "”. Try a first name on its own.") : null
+    )
+  );
+}
+
+function row(r) {
+  const inner = [];
+  if (r.showRib) inner.push(h("div", { key: "rib", style: "position:absolute; left:" + r.ribLeft + "px; top:0; width:" + r.ribW + "px; height:44px; border-left:4px solid " + r.ribColor + "; border-bottom:4px solid " + r.ribColor + "; border-bottom-left-radius:14px" }));
+  if (r.showSpine) inner.push(h("div", { key: "spine", style: "position:absolute; left:" + r.ribLeft + "px; top:40px; bottom:0; width:4px; background:" + r.ribColor }));
+
+  if (r.isCard) {
+    const head = h("div", { style: "display:flex; align-items:stretch" },
+      h("div", { style: "width:8px; flex:none; background:" + r.color }),
+      r.hasKids ? btn({ onClick: r.onToggle, style: "flex:none; width:42px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; border:none; background:" + r.soft + "; cursor:pointer" },
+        h("span", { style: "font-size:13px; color:" + r.color }, r.chevron),
+        h("span", { style: "font-size:11px; font-weight:800; color:" + r.color }, String(r.below))
+      ) : null,
+      btn({ onClick: r.onSelect, style: "flex:1; min-width:0; text-align:left; display:flex; gap:11px; align-items:flex-start; padding:12px 10px 12px 12px; border:none; background:transparent; cursor:pointer" },
+        h("span", { style: "flex:none; width:44px; height:44px; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
+        h("span", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:5px" },
+          h("span", { style: "display:flex; align-items:baseline; gap:8px; flex-wrap:wrap" },
+            h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; color:#201e1d; overflow-wrap:anywhere; min-width:0" }, r.name),
+            h("span", { style: "font-size:12px; color:#82796a" }, r.years)
+          ),
+          r.partnerName ? h("span", { style: "align-self:flex-start; display:flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; background:" + r.soft },
+            h("span", { style: "font-size:11px; color:" + r.color }, "♥"),
+            h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, r.partnerName),
+            h("span", { style: "font-size:11px; color:#82796a" }, r.partnerYears)
+          ) : null,
+          r.detail ? h("span", { style: "font-size:12px; line-height:1.4; color:#645c50" }, r.detail) : null,
+          h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + r.byColor }, r.byLine),
+          r.flagged ? h("span", { style: "align-self:flex-start; font-size:10px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:3px 9px; border-radius:999px" }, "two entries — tap, then open the chat") : null
+        )
+      ),
+      btn({ onClick: r.onAdd, style: "flex:none; width:50px; border:none; background:" + r.color + "; color:#fff2eb; font-size:24px; font-weight:700; cursor:pointer" }, "+")
+    );
+    const card = [head];
+    if (r.selected) {
+      card.push(h("div", { key: "acts", style: "display:flex; flex-wrap:wrap; gap:7px; padding:11px 12px; border-top:1.5px solid #dcd3c4; background:#f5ead8" },
+        btn({ onClick: r.onEdit, style: actBtn, hover: "border-color:#c67139" }, "Edit person"),
+        btn({ onClick: r.onAdd, style: actBtn, hover: "border-color:#c67139" }, "Add a child"),
+        btn({ onClick: r.onSibling, style: actBtn, hover: "border-color:#c67139" }, "Add a sibling"),
+        btn({ onClick: r.onDelete, style: "font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove"),
+        r.flagged ? btn({ onClick: r.onFlag, style: "font-size:12px; font-weight:800; padding:9px 14px; border-radius:999px; border:none; background:#8c491a; color:#fff2eb; cursor:pointer" }, "Open the chat") : null
+      ));
+    }
+    inner.push(h("div", { key: "card", style: "border-radius:24px; border:" + r.borderW + "px solid " + r.borderColor + "; background:#f9f4ed; overflow:hidden; box-shadow:0 1px 2px rgba(46,43,37,.14)" }, card));
+  } else if (r.isAdd) {
+    inner.push(btn({ key: "add", onClick: r.onAdd, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:14px 18px; border-radius:24px; border:2px dashed " + r.color + "; background:#f9f4ed; color:" + r.color + "; cursor:pointer" }, r.label));
+  }
+  return h("div", { key: r.id, style: "position:relative; padding-left:" + r.pad + "px; padding-top:12px; opacity:" + r.dim }, inner);
+}
+const actBtn = "font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
+
+/* --------------------------- projection view ----------------------------- */
+function projection(V) {
+  return h("div", { key: "proj", class: "proj" },
+    // top bar
+    h("div", { style: "flex:none; display:flex; align-items:flex-end; justify-content:space-between; gap:20px" },
+      h("div", { style: "display:flex; flex-direction:column; gap:8px; min-width:0" },
+        h("div", { style: "display:flex; align-items:center; gap:12px; flex-wrap:wrap" },
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(11px,1.1vw,14px); letter-spacing:.16em; text-transform:uppercase; color:#8c491a" }, "Board " + V.room + " · live"),
+          h("div", { style: "display:flex; align-items:center; gap:8px; padding:5px 12px; border-radius:999px; background:#f0fae1; border:1.5px solid #7a8a5e" },
+            h("span", { style: "width:9px; height:9px; border-radius:999px; background:#7a8a5e; display:block" }),
+            h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:700; color:#3d472b" }, V.isPaid ? V.liveLink + " · always live" : "updating in real time")
+          )
+        ),
+        h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(32px,5vw,60px); line-height:1" }, V.familyName || "Our Family")
+      ),
+      h("div", { style: "text-align:right; flex:none; display:flex; align-items:center; gap:22px" },
+        h("div", null,
+          h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(38px,5vw,64px); color:#c67139; line-height:1" }, String(V.peopleCount)),
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(9px,.9vw,12px); letter-spacing:.14em; text-transform:uppercase; color:#82796a" }, "people so far")
+        ),
+        btn({ onClick: V.onExitProjection, title: "Exit projection view", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+          h("span", { style: "font-size:14px" }, "↙"), h("span", null, "Exit"))
+      )
+    ),
+    // columns
+    h("div", { class: "proj-cols" },
+      h("div", { class: "proj-main" },
+        h("div", { class: "proj-tree noscroll" },
+          h("div", { style: "display:flex; flex-direction:column" },
+            V.bigRows.length
+              ? V.bigRows.map(r => projRow(r))
+              : h("div", { style: "padding:40px 8px; font-size:18px; color:#645c50; line-height:1.5" }, "No names yet — add the first relative from a phone and watch them appear here.")
+          )
+        )
+      ),
+      h("div", { class: "proj-side" },
+        h("div", { style: "flex:1; min-height:0; padding:22px; border-radius:28px; background:#ebddc5; display:flex; flex-direction:column; gap:12px; overflow:hidden" },
+          h("div", { style: "flex:none; font-family:'IBM Plex Mono', monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#645c50" }, "The log"),
+          h("div", { class: "noscroll", style: "flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:13px" },
+            V.bigLog.map((l, i) => h("div", { key: "bl" + i, style: "display:flex; gap:11px; align-items:flex-start" },
+              h("div", { style: "width:32px; height:32px; flex:none; border-radius:999px; background:" + l.c + "; color:#fff2eb; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center" }, l.i),
+              h("div", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:2px" },
+                h("div", { style: "font-size:14px; line-height:1.4" },
+                  h("span", { style: "font-weight:800" }, l.who), " ",
+                  h("span", { style: "font-weight:700; color:" + l.verbColor }, l.verb), " " + l.target
+                ),
+                h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; color:#82796a" }, l.when)
+              )
+            ))
+          )
+        ),
+        h("div", { style: "flex:none; display:flex; align-items:center; gap:16px; padding:18px; border-radius:24px; border:2px dashed #c0b6a5" },
+          h("div", { style: "width:72px; height:72px; flex:none; border-radius:14px; background:repeating-linear-gradient(45deg,#dcd3c4 0 6px,#eee7db 6px 12px)" }),
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:12px; line-height:1.6; color:#645c50" },
+            "add from your phone", h("br"), "board ", h("span", { style: "font-weight:700; color:#8c491a" }, V.room))
+        )
+      )
+    )
+  );
+}
+
+function projRow(r) {
+  const inner = [];
+  if (r.showRib) inner.push(h("div", { key: "rib", style: "position:absolute; left:" + r.ribLeft + "px; top:0; width:" + r.ribW + "px; height:34px; border-left:4px solid " + r.ribColor + "; border-bottom:4px solid " + r.ribColor + "; border-bottom-left-radius:14px" }));
+  if (r.showSpine) inner.push(h("div", { key: "spine", style: "position:absolute; left:" + r.ribLeft + "px; top:30px; bottom:0; width:4px; background:" + r.ribColor }));
+  inner.push(h("div", { key: "card", style: "display:flex; align-items:center; gap:14px; padding:10px 20px 10px 0; border-radius:20px; border:2px solid " + r.borderColor + "; background:#f9f4ed; overflow:hidden" },
+    h("div", { style: "width:8px; align-self:stretch; background:" + r.color }),
+    h("div", { style: "width:40px; height:40px; flex:none; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
+    h("div", { style: "display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; min-width:0" },
+      h("span", { style: "font-family:Caprasimo, serif; font-size:20px; overflow-wrap:anywhere; min-width:0" }, r.name),
+      h("span", { style: "font-size:13px; color:#82796a" }, r.years),
+      r.partnerName ? h("span", { style: "display:flex; align-items:center; gap:7px; padding:4px 12px; border-radius:999px; background:" + r.soft },
+        h("span", { style: "font-size:12px; color:" + r.color }, "♥"),
+        h("span", { style: "font-size:14px; font-weight:700" }, r.partnerName)
+      ) : null,
+      h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:" + r.byColor }, r.byLine)
+    )
+  ));
+  return h("div", { key: r.id, style: "position:relative; padding-left:" + r.pad + "px; padding-top:10px" }, inner);
+}
+
+/* ------------------------------ sheets ----------------------------------- */
+const SHEET = "position:absolute; left:0; right:0; bottom:0; overflow-y:auto; background:#f9f4ed; border-radius:36px 36px 46px 46px; padding:14px 22px 28px; display:flex; flex-direction:column; box-shadow:0 12px 32px rgba(46,43,37,.3); animation:riseIn .28s ease";
+const GRAB = h("div", { style: "width:44px; height:5px; border-radius:999px; background:#dcd3c4; align-self:center" });
+const fieldStyle = "font-size:15px; padding:14px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none";
+
+function sheets(V) {
+  if (V.isEditSheet) return editSheet(V);
+  if (V.isDeleteSheet) return deleteSheet(V);
+  if (V.isFlagSheet) return flagSheet(V);
+  if (V.isBoardSheet) return boardSheet(V);
+  if (V.isShareSheet) return shareSheet(V);
+  if (V.isLogSheet) return logSheet(V);
+  if (V.isDownloadSheet) return downloadSheet(V);
+  if (V.isUpgradeSheet) return upgradeSheet(V);
+  return null;
+}
+
+function editSheet(V) {
+  return h("div", { key: "sheet-edit", style: SHEET + "; max-height:88%; gap:15px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; flex-direction:column; gap:4px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px" }, V.editTitle),
+      h("div", { style: "font-size:13px; color:#645c50" }, V.editSub)
+    ),
+    h("div", { style: "display:flex; align-items:center; gap:14px" },
+      h("div", { style: "width:64px; height:64px; flex:none; border-radius:999px; background:repeating-linear-gradient(45deg,#dcd3c4 0 6px,#eee7db 6px 12px)" }),
+      h("div", { style: "display:flex; flex-direction:column; gap:6px" },
+        h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "portrait"),
+        btn({ style: "font-size:13px; font-weight:700; padding:9px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Add a photo")
+      )
+    ),
+    inp({ value: V.draftName, onChange: V.onDraftName, placeholder: "Full name", style: "font-size:20px; padding:16px 20px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+    V.dupWarn ? h("div", { style: "padding:13px 16px; border-radius:20px; background:#ffe1d0; border:1.5px solid #f6a06b; font-size:13px; line-height:1.45; color:#8c491a" }, V.dupWarn) : null,
+    btn({ onClick: V.onToggleMore, style: "align-self:flex-start; font-size:14px; font-weight:700; color:#8c491a; background:transparent; border:none; cursor:pointer; padding:0" }, V.moreLabel),
+    V.draftMore ? h("div", { style: "display:flex; flex-direction:column; gap:10px" },
+      h("div", { style: "display:flex; gap:10px" },
+        inp({ value: V.draftBorn, onChange: V.onDraftBorn, placeholder: "Born", style: "flex:1; min-width:0; " + fieldStyle }),
+        inp({ value: V.draftDied, onChange: V.onDraftDied, placeholder: "Died — blank if living", style: "flex:1; min-width:0; " + fieldStyle })
+      ),
+      inp({ value: V.draftPlace, onChange: V.onDraftPlace, placeholder: "Where they're from", style: fieldStyle }),
+      inp({ value: V.draftNote, onChange: V.onDraftNote, placeholder: "A line about them", style: fieldStyle }),
+      h("div", { style: "padding:16px; border-radius:24px; border:1.5px solid #dcd3c4; background:#f5ead8; display:flex; flex-direction:column; gap:12px" },
+        h("div", { style: "display:flex; align-items:center; justify-content:space-between; gap:10px" },
+          h("div", { style: "font-family:Caprasimo, serif; font-size:18px" }, "Spouse or partner"),
+          V.hasPartner ? btn({ onClick: V.onRemovePartner, style: "font-size:12px; font-weight:700; padding:8px 13px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove") : null
+        ),
+        h("div", { style: "display:flex; align-items:center; gap:12px" },
+          h("div", { style: "width:52px; height:52px; flex:none; border-radius:999px; background:repeating-linear-gradient(45deg,#dcd3c4 0 6px,#eee7db 6px 12px)" }),
+          btn({ style: "font-size:13px; font-weight:700; padding:9px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Add a photo")
+        ),
+        inp({ value: V.draftPartner, onChange: V.onDraftPartner, placeholder: "Their name", style: "font-size:16px; padding:14px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none" }),
+        h("div", { style: "display:flex; gap:10px" },
+          inp({ value: V.draftPartnerBorn, onChange: V.onDraftPartnerBorn, placeholder: "Born", style: "flex:1; min-width:0; font-size:15px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none" }),
+          inp({ value: V.draftPartnerDied, onChange: V.onDraftPartnerDied, placeholder: "Died", style: "flex:1; min-width:0; font-size:15px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none" })
+        ),
+        inp({ value: V.draftPartnerPlace, onChange: V.onDraftPartnerPlace, placeholder: "Where they're from", style: "font-size:15px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none" })
+      )
+    ) : null,
+    h("div", { style: "display:flex; gap:10px" },
+      btn({ onClick: V.onCancelEdit, style: "flex:1; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Cancel"),
+      btn({ onClick: V.onSaveEdit, style: "flex:2; font-size:16px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveLabel)
+    )
+  );
+}
+
+function deleteSheet(V) {
+  return h("div", { key: "sheet-del", style: SHEET + "; gap:16px" },
+    GRAB,
+    h("div", { style: "font-family:Caprasimo, serif; font-size:24px" }, "Remove this person?"),
+    h("div", { style: "font-size:15px; line-height:1.5; color:#645c50" }, V.deleteBody),
+    h("div", { style: "display:flex; gap:10px" },
+      btn({ onClick: V.onCloseSheet, style: "flex:2; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Keep them"),
+      btn({ onClick: V.onConfirmDelete, style: "flex:1; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#8c491a; color:#fff2eb; cursor:pointer" }, "Remove")
+    )
+  );
+}
+
+function flagSheet(V) {
+  return h("div", { key: "sheet-flag", style: SHEET + "; max-height:85%; gap:15px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; flex-direction:column; gap:5px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px; line-height:1.1" }, "Two people, one name"),
+      h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "Both stay on the tree until the family decides. Nothing is joined behind your back.")
+    ),
+    h("div", { style: "display:flex; gap:10px" },
+      V.flagPair.map((p, i) => h("div", { key: "fp" + i, style: "flex:1; padding:14px; border-radius:24px; background:#f5ead8; border:1.5px solid #dcd3c4; display:flex; flex-direction:column; gap:6px" },
+        h("div", { style: "font-size:14px; font-weight:800" }, p.name),
+        h("div", { style: "font-size:12px; color:#645c50" }, p.meta),
+        h("div", { style: "font-size:11px; color:#82796a" }, "by " + p.addedBy)
+      ))
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:11px" },
+      V.thread.map((m, i) => h("div", { key: "th" + i, style: "display:flex; gap:10px; align-items:flex-start" },
+        h("div", { style: "width:28px; height:28px; flex:none; border-radius:999px; background:" + m.c + "; color:#fff2eb; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center" }, m.i),
+        h("div", { style: "padding:11px 14px; border-radius:18px; background:#ebddc5; font-size:13px; line-height:1.45" }, m.text)
+      ))
+    ),
+    h("div", { style: "display:flex; gap:8px" },
+      inp({ value: V.replyText, onChange: V.onReply, placeholder: "Say something…", style: "flex:1; font-size:15px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+      btn({ onClick: V.onSendReply, style: "flex:none; font-size:15px; font-weight:700; padding:0 20px; border-radius:999px; border:none; background:#201e1d; color:#f9f4ed; cursor:pointer" }, "Send")
+    ),
+    h("div", { style: "display:flex; gap:10px" },
+      btn({ onClick: V.onKeepBoth, style: "flex:1; font-size:14px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #7a8a5e; background:#f0fae1; color:#56633f; cursor:pointer" }, "Keep both for now"),
+      btn({ onClick: V.onMerge, style: "flex:1; font-size:14px; font-weight:700; padding:15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer" }, "Merge them")
+    )
+  );
+}
+
+function boardSheet(V) {
+  return h("div", { key: "sheet-board", style: SHEET + "; max-height:85%; gap:16px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "padding:20px; border-radius:28px; background:#ffe1d0; text-align:center" },
+      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#8c491a" }, "Board code"),
+      h("div", { style: "font-family:Caprasimo, serif; font-size:40px; letter-spacing:.16em; color:#8c491a; margin-top:4px" }, V.room),
+      h("div", { style: "font-size:13px; color:#645c50; margin-top:8px; line-height:1.5" }, "Anyone who types this code joins the same tree.")
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:10px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:19px" }, "Who's adding"),
+      V.contributors.map((c, i) => h("div", { key: "co" + i, style: "display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-radius:20px; border:1.5px solid #dcd3c4" },
+        h("div", { style: "display:flex; align-items:center; gap:11px" },
+          h("div", { style: "width:32px; height:32px; border-radius:999px; background:" + c.c + "; color:#fff2eb; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center" }, c.i),
+          h("div", { style: "font-size:14px; font-weight:700" }, c.name)
+        ),
+        h("div", { style: "font-size:12px; color:#82796a" }, c.when)
+      ))
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:9px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:19px" }, "Just happened"),
+      V.feed.map((f, i) => h("div", { key: "fe" + i, style: "font-size:13px; line-height:1.45; color:#201e1d" },
+        h("span", { style: "font-weight:800" }, f.who), " " + f.text + " ",
+        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; color:#82796a" }, f.t)
+      ))
+    ),
+    h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "Everyone's names merge on their own. Two entries for the same person are kept side by side and flagged, never silently joined."),
+    btn({ onClick: V.onLeaveBoard, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Leave this board"),
+    btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Back to the tree")
+  );
+}
+
+function shareSheet(V) {
+  return h("div", { key: "sheet-share", style: SHEET + "; max-height:85%; gap:15px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "font-family:Caprasimo, serif; font-size:24px" }, "Send the code to family"),
+    h("div", { style: "padding:16px; border-radius:24px; background:#ffe1d0; text-align:center" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:36px; letter-spacing:.16em; color:#8c491a" }, V.room)
+    ),
+    h("div", { style: "padding:16px; border-radius:20px; border:1.5px solid #dcd3c4; background:#f5ead8; font-size:13px; line-height:1.6; color:#201e1d; white-space:pre-wrap" }, V.invite),
+    h("div", { style: "display:flex; gap:9px; flex-wrap:wrap" },
+      btn({ onClick: V.onCopyInvite, style: "flex:1; min-width:120px; font-size:14px; font-weight:700; padding:14px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer" }, "Copy message"),
+      btn({ onClick: V.onTextIt, style: "flex:1; min-width:120px; font-size:14px; font-weight:700; padding:14px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Text it")
+    ),
+    h("div", { style: "padding:14px 16px; border-radius:20px; background:#f0fae1; font-size:13px; line-height:1.5; color:#3d472b" }, "Send it to people you actually want editing the tree. Anyone with the code can add, change or remove names.")
+  );
+}
+
+function closeX(onClick) {
+  return btn({ onClick, style: "flex:none; width:44px; height:44px; border-radius:999px; border:none; background:#ebddc5; color:#201e1d; font-size:19px; font-weight:700; cursor:pointer", hover: "background:#dcd3c4" }, "✕");
+}
+
+function logSheet(V) {
+  return h("div", { key: "sheet-log", style: SHEET + "; max-height:90%; gap:14px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; align-items:flex-start; justify-content:space-between; gap:14px" },
+      h("div", { style: "display:flex; flex-direction:column; gap:5px" },
+        h("div", { style: "font-family:Caprasimo, serif; font-size:24px; line-height:1.1" }, "Everything that's happened"),
+        h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "Every add, edit and removal on board " + V.room + ", with who did it and when. Nobody can quietly take a relative off the tree.")
+      ),
+      closeX(V.onCloseSheet)
+    ),
+    h("div", { style: "display:flex; gap:7px; flex-wrap:wrap" },
+      V.logFilters.map(fl => btn({ key: fl.key, onClick: fl.onPick, style: "font-size:12px; font-weight:700; padding:8px 14px; border-radius:999px; cursor:pointer; background:" + fl.bg + "; color:" + fl.fg + "; border:1.5px solid " + fl.bd }, fl.label))
+    ),
+    h("div", { style: "display:flex; flex-direction:column" },
+      V.logRows.map((l, i) => h("div", { key: "lr" + i, style: "display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-top:1.5px solid #dcd3c4" },
+        h("div", { style: "width:30px; height:30px; flex:none; border-radius:999px; background:" + l.c + "; color:#fff2eb; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center" }, l.i),
+        h("div", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:3px" },
+          h("div", { style: "font-size:14px; line-height:1.4" },
+            h("span", { style: "font-weight:800" }, l.who), " ",
+            h("span", { style: "font-weight:700; color:" + l.verbColor }, l.verb), " " + l.target
+          ),
+          l.detail ? h("div", { style: "font-size:12px; color:#645c50; line-height:1.4" }, l.detail) : null,
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.06em; color:#82796a" }, l.when)
+        )
+      ))
+    ),
+    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "The log travels with the tree — it's in the backup and on the printed sheet."),
+    btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Back to the tree")
+  );
+}
+
+function downloadSheet(V) {
+  return h("div", { key: "sheet-dl", style: SHEET + "; max-height:85%; gap:14px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; align-items:flex-start; justify-content:space-between; gap:14px" },
+      h("div", { style: "display:flex; flex-direction:column; gap:4px" },
+        h("div", { style: "font-family:Caprasimo, serif; font-size:24px; line-height:1.1" }, "Download the tree"),
+        h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, V.posterLine)
+      ),
+      closeX(V.onCloseSheet)
+    ),
+    h("div", { style: "height:172px; border-radius:20px; border:1.5px solid #dcd3c4; background:repeating-linear-gradient(45deg,#dcd3c4 0 8px,#eee7db 8px 16px)" }),
+    h("div", { style: "display:flex; flex-direction:column; gap:9px" },
+      btn({ onClick: V.onDownloadPdf, style: "font-size:15px; font-weight:800; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Download as PDF"),
+      btn({ onClick: V.onDownloadImage, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #c67139; background:transparent; color:#8c491a; cursor:pointer", hover: "background:#fff2eb" }, "Download as image")
+    ),
+    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "Both include every name, the generation colours, and the change log printed on the last page. Free, and yours to keep.")
+  );
+}
+
+function upgradeSheet(V) {
+  const body = V.isPaid
+    ? h("div", { style: "display:flex; flex-direction:column; gap:14px" },
+        h("div", { style: "padding:16px; border-radius:20px; background:#f0fae1; border:1.5px solid #ccdbb2; display:flex; flex-direction:column; gap:6px" },
+          h("div", { style: "font-size:13px; font-weight:800; color:#3d472b" }, "This board stays live"),
+          h("div", { style: "font-size:13px; line-height:1.5; color:#56633f" }, "Renews " + V.renewDate + " · receipt sent to " + V.payEmail)
+        ),
+        h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Your family link"),
+          h("div", { style: "padding:15px 18px; border-radius:20px; border:1.5px solid #dcd3c4; background:#f5ead8; font-family:'IBM Plex Mono', monospace; font-size:13px; color:#201e1d; overflow:hidden; text-overflow:ellipsis" }, V.liveLink)
+        ),
+        btn({ onClick: V.onCopyLink, style: "font-size:15px; font-weight:800; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Copy the link"),
+        btn({ onClick: V.onCloseSheet, style: "font-size:14px; font-weight:700; padding:14px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Done"),
+        h("div", { style: "font-size:11px; line-height:1.5; color:#82796a; text-align:center" }, "Cancel any time from the receipt email. Downloads stay free.")
+      )
+    : h("div", { style: "display:flex; flex-direction:column; gap:14px" },
+        h("div", { style: "padding:14px 16px; border-radius:20px; background:#ffe1d0; border:1.5px solid #f6a06b; font-size:13px; line-height:1.5; color:#8c491a" },
+          "Right now this board is free — the link goes dark on ", h("span", { style: "font-weight:800" }, V.expiryDate), ", three days from today."),
+        h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+          V.planPerks.map((p, i) => h("div", { key: "pk" + i, style: "display:flex; align-items:flex-start; gap:10px" },
+            h("span", { style: "width:20px; height:20px; flex:none; border-radius:999px; background:#7a8a5e; color:#f0fae1; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center" }, "✓"),
+            h("span", { style: "font-size:13px; line-height:1.45; color:#201e1d" }, p)
+          ))
+        ),
+        h("div", { style: "display:flex; flex-direction:column; gap:10px" },
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Where the link goes"),
+          inp({ value: V.payEmail, onChange: V.onPayEmail, placeholder: "you@email.com", style: "font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a; margin-top:4px" }, "Card"),
+          inp({ value: V.payCard, onChange: V.onPayCard, placeholder: "Card number", style: "font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+          h("div", { style: "display:flex; gap:10px" },
+            inp({ value: V.payExp, onChange: V.onPayExp, placeholder: "MM / YY", style: "flex:1; min-width:0; font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+            inp({ value: V.payCvc, onChange: V.onPayCvc, placeholder: "CVC", style: "flex:1; min-width:0; font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
+          ),
+          inp({ value: V.payName, onChange: V.onPayName, placeholder: "Name on card", style: "font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
+        ),
+        h("div", { style: "display:flex; align-items:baseline; justify-content:space-between; padding:14px 18px; border-radius:20px; background:#ebddc5" },
+          h("div", { style: "font-size:13px; font-weight:700; color:#645c50" }, "Roundtable, one family"),
+          h("div", { style: "display:flex; align-items:baseline; gap:5px" },
+            h("span", { style: "font-family:Caprasimo, serif; font-size:26px" }, "$19.99"),
+            h("span", { style: "font-size:12px; color:#645c50" }, "/ year")
+          )
+        ),
+        V.payError ? h("div", { style: "font-size:13px; font-weight:700; color:#8c491a" }, V.payError) : null,
+        btn({ onClick: V.onSubscribe, style: "font-size:16px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Keep it live — $19.99 a year"),
+        btn({ onClick: V.onCloseSheet, style: "font-size:14px; font-weight:700; padding:14px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Not now — let it expire in 3 days"),
+        h("div", { style: "font-size:11px; line-height:1.5; color:#82796a; text-align:center" }, "Cancel any time. The PDF and image downloads stay free either way.")
+      );
+
+  return h("div", { key: "sheet-up", style: SHEET + "; max-height:92%; gap:14px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; align-items:flex-start; justify-content:space-between; gap:14px" },
+      h("div", { style: "display:flex; flex-direction:column; gap:5px" },
+        h("div", { style: "font-family:Caprasimo, serif; font-size:25px; line-height:1.08" }, V.upgradeTitle),
+        h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, V.upgradeSub)
+      ),
+      closeX(V.onCloseSheet)
+    ),
+    body
+  );
+}
+
+/* ------------------------------ boot ------------------------------------- */
+(function () {
+  App._root = document.getElementById("device");
+  // seed the sample board once so first-time visitors can explore it
+  if (!localStorage.getItem(STORE_PREFIX + DEMO_ROOM)) {
+    localStorage.setItem(STORE_PREFIX + DEMO_ROOM, JSON.stringify({
+      familyName: SEED.familyName, people: SEED.people, feed: SEED.feed, log: SEED.log, thread: SEED.thread, fresh: {}, collapsed: {}, subscribed: false
+    }));
+  }
+  // resume last session
+  try {
+    const sess = JSON.parse(localStorage.getItem("roundtable:session") || "null");
+    if (sess && sess.myName) App.state.myName = sess.myName;
+    if (sess && sess.step === "app" && sess.room) {
+      App.state.step = "landing"; // will enter cleanly below
+      App.enterRoom(sess.room, false);
+      App.state.myName = sess.myName || App.state.myName;
+    }
+  } catch (e) {}
+  App.render();
+  if (App.state.step === "app") App.startLive();
+})();
+</script>
+</body>
+</html>
