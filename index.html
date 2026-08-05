@@ -312,7 +312,8 @@ const App = {
     log: clone(SEED.log),
     undoStack: [],
     logFilter: "all",
-    payEmail: "", payCard: "", payExp: "", payCvc: "", payName: "", payError: null, subscribed: false
+    payEmail: "", payCard: "", payExp: "", payCvc: "", payName: "", payError: null,
+    subscribed: false, expiresAt: null, paidUntil: null, ownerEmail: null
   },
 
   _vnode: null,
@@ -323,6 +324,7 @@ const App = {
   _chan: null,
   _remoteReady: false,
   _lastWriteJSON: null,
+  _deepLinkCode: null,
 
   setState(update, cb) {
     const patchObj = typeof update === "function" ? update(this.state) : update;
@@ -347,10 +349,7 @@ const App = {
   persist() {
     const s = this.state;
     if (s.step !== "app") { localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, myName: s.myName })); return; }
-    const snap = {
-      familyName: s.familyName, people: s.people, feed: s.feed, log: s.log,
-      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed, subscribed: s.subscribed
-    };
+    const snap = this.boardSnapshot();
     try { localStorage.setItem(STORE_PREFIX + s.room, JSON.stringify(snap)); } catch (e) {}
     localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName }));
     this.saveRemote(s.room, snap);
@@ -370,23 +369,26 @@ const App = {
     }, 600);
   },
   boardSnapshot() {
+    // The tree blob only — `subscribed`/paid status is a server-controlled
+    // column (is_paid), never trusted from this client-writable JSON.
     const s = this.state;
     return {
       familyName: s.familyName, people: s.people, feed: s.feed, log: s.log,
-      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed, subscribed: s.subscribed
+      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed
     };
   },
   async syncRoom(room, isNew) {
     if (!sb || room === DEMO_ROOM) { this._remoteReady = true; return; }
     this.subscribeRoom(room);
     try {
-      const { data, error } = await sb.from("boards").select("data").eq("code", room).maybeSingle();
+      const { data, error } = await sb.from("boards").select("*").eq("code", room).maybeSingle();
       if (error) throw error;
       if (this.state.room !== room || this.state.step !== "app") return; // navigated away
       if (data && data.data) {
         // adopt the shared board that already exists
         this._lastWriteJSON = JSON.stringify(data.data);
         Object.assign(this.state, data.data);
+        this.applyBilling(data);   // paid status/expiry from server columns (not the blob)
         try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(data.data)); } catch (e) {}
         this._remoteReady = true;
         this.render();
@@ -405,16 +407,39 @@ const App = {
     this._chan = sb.channel("board:" + room)
       .on("postgres_changes", { event: "*", schema: "public", table: "boards", filter: "code=eq." + room }, payload => {
         if (this.state.room !== room || this.state.step !== "app") return;
-        const incoming = payload.new && payload.new.data;
-        if (!incoming) return;
-        const json = JSON.stringify(incoming);
-        if (json === this._lastWriteJSON) return; // our own change echoing back
-        this._lastWriteJSON = json;
-        Object.assign(this.state, incoming);
-        try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(incoming)); } catch (e) {}
-        this.render();
+        const row = payload.new;
+        if (!row) return;
+        let changed = false;
+        const incoming = row.data;
+        if (incoming) {
+          const json = JSON.stringify(incoming);
+          if (json !== this._lastWriteJSON) {   // skip our own change echoing back
+            this._lastWriteJSON = json;
+            Object.assign(this.state, incoming);
+            try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(incoming)); } catch (e) {}
+            changed = true;
+          }
+        }
+        // server-controlled billing columns (e.g. Stripe webhook flips is_paid)
+        if (this.applyBilling(row)) changed = true;
+        if (changed) this.render();
       })
       .subscribe();
+  },
+  // Reflect the server-owned billing/lifecycle columns into UI state. Returns
+  // true if anything changed. Tolerant of the columns not existing yet (undefined).
+  applyBilling(row) {
+    const paid = !!row.is_paid;
+    const exp = row.expires_at || null;
+    const until = row.paid_until || null;
+    const owner = row.owner_email || null;
+    const changed = paid !== this.state.subscribed || exp !== this.state.expiresAt ||
+                    until !== this.state.paidUntil || owner !== this.state.ownerEmail;
+    this.state.subscribed = paid;
+    this.state.expiresAt = exp;
+    this.state.paidUntil = until;
+    this.state.ownerEmail = owner;
+    return changed;
   },
   unsubscribeRoom() {
     if (sb && this._chan) { try { sb.removeChannel(this._chan); } catch (e) {} }
@@ -474,6 +499,13 @@ const App = {
   },
   plusDays(n) {
     const d = new Date(Date.now() + n * 86400000);
+    const mo = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()];
+    return mo + " " + d.getDate() + ", " + d.getFullYear();
+  },
+  fmtDate(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
     const mo = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()];
     return mo + " " + d.getDate() + ", " + d.getFullYear();
   },
@@ -688,7 +720,11 @@ const App = {
       onLandingJoin: () => this.setState({ step: "name", joining: true }),
       myName: s.myName,
       onMyName: e => this.setState({ myName: e.target.value }),
-      onNameNext: () => { if (s.myName.trim()) this.setState({ step: "board", room: s.joining ? s.room : this.newCode() }); },
+      onNameNext: () => {
+        if (!s.myName.trim()) return;
+        if (this._deepLinkCode) { const c = this._deepLinkCode; this._deepLinkCode = null; this.enterRoom(c, false); return; }
+        this.setState({ step: "board", room: s.joining ? s.room : this.newCode() });
+      },
       joining: s.joining, notJoining: !s.joining,
       codeInput: s.codeInput,
       onCodeInput: e => this.setState({ codeInput: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8), codeError: null }),
@@ -801,15 +837,15 @@ const App = {
       onOpenUpgrade: () => this.setState({ sheet: "upgrade", payError: null }),
       onDownloadPdf: () => this.downloadTree("pdf", total),
       onDownloadImage: () => this.downloadImage(total),
-      expiryDate: this.plusDays(3),
-      renewDate: this.plusDays(365),
+      expiryDate: s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(3),
+      renewDate: s.paidUntil ? this.fmtDate(s.paidUntil) : (s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(365)),
       isPaid: s.subscribed, isUnpaid: !s.subscribed,
       saveButtonLabel: s.subscribed ? "Link" : "Save",
       upgradeTitle: s.subscribed ? "Your tree is live" : "Keep the tree alive",
       upgradeSub: s.subscribed
         ? "Share this link with anyone in the family — it always shows the latest tree."
         : "Your own link to this tree, updating in real time as the family adds to it.",
-      liveLink: "roundtable.family/" + s.room.toLowerCase(),
+      liveLink: "famroundtable.com/?board=" + s.room,
       onCopyLink: () => { this.copy("https://roundtable.family/" + s.room.toLowerCase()); this.setState({ sheet: null, toast: { text: "Link copied — paste it in the family thread", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
       planPerks: [
         "A private link that always shows the latest tree — no app to install.",
@@ -1652,11 +1688,26 @@ function upgradeSheet(V) {
       familyName: SEED.familyName, people: SEED.people, feed: SEED.feed, log: SEED.log, thread: SEED.thread, fresh: {}, collapsed: {}, subscribed: false
     }));
   }
-  // resume last session
+  // deep link from an emailed / shared board link: ?board=CODE
+  let deepCode = "";
+  try {
+    const params = new URLSearchParams(location.search);
+    deepCode = (params.get("board") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+  } catch (e) {}
+  // resume last session (or open the deep-linked board)
   try {
     const sess = JSON.parse(localStorage.getItem("roundtable:session") || "null");
     if (sess && sess.myName) App.state.myName = sess.myName;
-    if (sess && sess.step === "app" && sess.room) {
+    if (deepCode) {
+      if (App.state.myName) {
+        App.state.step = "landing";
+        App.enterRoom(deepCode, false);        // known visitor -> straight into the board
+      } else {
+        App._deepLinkCode = deepCode;          // ask their name first, then open it
+        App.state.step = "name";
+        App.state.joining = true;
+      }
+    } else if (sess && sess.step === "app" && sess.room) {
       App.state.step = "landing"; // will enter cleanly below
       App.enterRoom(sess.room, false);
       App.state.myName = sess.myName || App.state.myName;
