@@ -27,15 +27,19 @@
   .noscroll::-webkit-scrollbar { display: none; }
   .noscroll { scrollbar-width: none; }
 
-  /* Full-bleed responsive app shell: fills the whole viewport on every screen */
+  /* Full-bleed cream page; the app sits in a centered readable column.
+     Same cream on the page and the column, so there's no frame or card edge —
+     it reads as one full-width site. Edge-to-edge on phones. */
   #stage {
     min-height: 100dvh;
     display: flex;
+    justify-content: center;
     background: #f5ead8;
   }
   #device {
     position: relative;
     width: 100%;
+    max-width: 640px;
     height: 100dvh;
     background: #f5ead8;
     overflow: hidden;
