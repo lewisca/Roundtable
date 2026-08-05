@@ -85,6 +85,7 @@
 <body>
 <div id="stage"><div id="device"></div></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 "use strict";
 /* =========================================================================
@@ -268,6 +269,16 @@ const SCRIPT = [
 const STORE_PREFIX = "roundtable:board:";
 const DEMO_ROOM = "V3L4Y2";
 
+// Supabase backend: real shared boards + realtime. The anon key is public by
+// design — access is governed by the RLS policies on the `boards` table.
+// If the library fails to load (offline), `sb` is null and the app runs on
+// localStorage only, so nothing breaks.
+const SUPABASE_URL = "https://kjoomgilsdzvkioohiws.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtqb29tZ2lsc2R6dmtpb29oaXdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NTI5NDYsImV4cCI6MjEwMTUyODk0Nn0.831AhOMEJ40pZD3qBnmZAxFGJ-TxC-ta5zHWk-IdaAI";
+const sb = (typeof supabase !== "undefined" && supabase.createClient)
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { realtime: { params: { eventsPerSecond: 5 } } })
+  : null;
+
 const App = {
   state: {
     step: "landing",
@@ -308,6 +319,10 @@ const App = {
   _root: null,
   _toastTimer: null,
   _liveTimer: null,
+  _saveTimer: null,
+  _chan: null,
+  _remoteReady: false,
+  _lastWriteJSON: null,
 
   setState(update, cb) {
     const patchObj = typeof update === "function" ? update(this.state) : update;
@@ -338,6 +353,72 @@ const App = {
     };
     try { localStorage.setItem(STORE_PREFIX + s.room, JSON.stringify(snap)); } catch (e) {}
     localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName }));
+    this.saveRemote(s.room, snap);
+  },
+
+  /* ---- Supabase sync (real shared boards + realtime) ---------------- */
+  saveRemote(room, snap) {
+    // Demo board stays local-only; wait until the initial remote load is done
+    // so a freshly-entered empty board can't clobber the real one.
+    if (!sb || room === DEMO_ROOM || !this._remoteReady) return;
+    const json = JSON.stringify(snap);
+    if (json === this._lastWriteJSON) return; // board data unchanged (UI-only edit)
+    clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(async () => {
+      this._lastWriteJSON = json;
+      try { await sb.from("boards").upsert({ code: room, data: snap }); } catch (e) {}
+    }, 600);
+  },
+  boardSnapshot() {
+    const s = this.state;
+    return {
+      familyName: s.familyName, people: s.people, feed: s.feed, log: s.log,
+      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed, subscribed: s.subscribed
+    };
+  },
+  async syncRoom(room, isNew) {
+    if (!sb || room === DEMO_ROOM) { this._remoteReady = true; return; }
+    this.subscribeRoom(room);
+    try {
+      const { data, error } = await sb.from("boards").select("data").eq("code", room).maybeSingle();
+      if (error) throw error;
+      if (this.state.room !== room || this.state.step !== "app") return; // navigated away
+      if (data && data.data) {
+        // adopt the shared board that already exists
+        this._lastWriteJSON = JSON.stringify(data.data);
+        Object.assign(this.state, data.data);
+        try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(data.data)); } catch (e) {}
+        this._remoteReady = true;
+        this.render();
+      } else {
+        // board doesn't exist yet — create it from the current (local) state
+        this._remoteReady = true;
+        this.persist();
+      }
+    } catch (e) {
+      this._remoteReady = true; // offline/error: fall back to local, retry on next edit
+    }
+  },
+  subscribeRoom(room) {
+    if (!sb) return;
+    this.unsubscribeRoom();
+    this._chan = sb.channel("board:" + room)
+      .on("postgres_changes", { event: "*", schema: "public", table: "boards", filter: "code=eq." + room }, payload => {
+        if (this.state.room !== room || this.state.step !== "app") return;
+        const incoming = payload.new && payload.new.data;
+        if (!incoming) return;
+        const json = JSON.stringify(incoming);
+        if (json === this._lastWriteJSON) return; // our own change echoing back
+        this._lastWriteJSON = json;
+        Object.assign(this.state, incoming);
+        try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(incoming)); } catch (e) {}
+        this.render();
+      })
+      .subscribe();
+  },
+  unsubscribeRoom() {
+    if (sb && this._chan) { try { sb.removeChannel(this._chan); } catch (e) {} }
+    this._chan = null;
   },
   loadRoom(room) {
     const raw = localStorage.getItem(STORE_PREFIX + room);
@@ -363,8 +444,11 @@ const App = {
       });
     }
     this.startLive();
+    this.unsubscribeRoom();       // drop any previous board's realtime channel
+    this._remoteReady = false;   // block remote writes until the real board is loaded
     this.persist();
     this.render();
+    this.syncRoom(room, isNew);
   },
 
   /* ---- helpers (ported) --------------------------------------------- */
@@ -599,8 +683,8 @@ const App = {
       onStartNow: () => this.setState({ step: "name", joining: false }),
       onBackToLanding: () => this.setState({ step: "landing", joining: false }),
       onBackToName: () => this.setState({ step: "name" }),
-      onGoLanding: () => { clearInterval(this._liveTimer); this.setState({ step: "landing", sheet: null, selected: null, joining: false, projection: false }); },
-      onLeaveBoard: () => { clearInterval(this._liveTimer); this.setState({ step: "board", sheet: null, selected: null, projection: false }); },
+      onGoLanding: () => { clearInterval(this._liveTimer); this.unsubscribeRoom(); this._remoteReady = false; this.setState({ step: "landing", sheet: null, selected: null, joining: false, projection: false }); },
+      onLeaveBoard: () => { clearInterval(this._liveTimer); this.unsubscribeRoom(); this._remoteReady = false; this.setState({ step: "board", sheet: null, selected: null, projection: false }); },
       onLandingJoin: () => this.setState({ step: "name", joining: true }),
       myName: s.myName,
       onMyName: e => this.setState({ myName: e.target.value }),
