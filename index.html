@@ -46,6 +46,20 @@
     display: flex;
     flex-direction: column;
   }
+  /* On wide screens the app view uses a two-pane desktop layout */
+  #device.app-wide { max-width: 1040px; }
+
+  /* Popups: bottom sheet on phones, centered modal dialog on wide screens */
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 36px 36px 46px 46px; max-height: 88%; }
+  .apptoast { left: 18px; right: 18px; }
+  @media (min-width: 1000px) {
+    .sheet {
+      left: 0; right: 0; top: 0; bottom: 0; margin: auto;
+      width: min(460px, 90%); height: max-content; max-height: 86%;
+      border-radius: 26px;
+    }
+    .apptoast { left: auto; right: 28px; max-width: 360px; }
+  }
   .screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
   /* Projection View — read-only, full-window live display for a TV/projector */
@@ -266,6 +280,7 @@ const App = {
     familyName: SEED.familyName,
     zoom: 1,
     projection: false,
+    wide: false,
     query: "",
     collapsed: {},
     selected: null,
@@ -610,6 +625,7 @@ const App = {
       peopleCount: total,
       gensCount: gens,
       hereLabel: (s.room === DEMO_ROOM ? "5 here" : "1 here"),
+      wide: s.wide,
       isProjection: s.projection,
       onOpenProjection: () => this.setState({ projection: true, sheet: null, selected: null }),
       onExitProjection: () => this.setState({ projection: false }),
@@ -896,6 +912,7 @@ function inp(props) {
 }
 
 function view(V) {
+  if (App._root) App._root.classList.toggle("app-wide", V.isApp && V.wide && !V.isProjection);
   let screen;
   if (V.isLanding) screen = viewLanding(V);
   else if (V.isName) screen = viewName(V);
@@ -987,19 +1004,81 @@ function chip(onClick, style, ...kids) { return btn({ onClick, style }, ...kids)
 
 function viewApp(V) {
   if (V.isProjection) return projection(V);
+  if (V.wide) return appDesktop(V);
   return h("div", { key: "app", style: "flex:1; display:flex; flex-direction:column; min-height:0; position:relative" },
     appHeader(V),
     appTree(V),
-    V.toastText ? h("div", { key: "toast", style: "position:absolute; left:18px; right:18px; bottom:24px; padding:14px 18px; border-radius:28px; background:#201e1d; color:#f9f4ed; display:flex; align-items:center; gap:12px; box-shadow:0 12px 32px rgba(46,43,37,.3); animation:riseIn .3s ease" },
-      h("div", { style: "width:26px; height:26px; flex:none; border-radius:999px; background:" + V.toastColor + "; color:#fff2eb; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center" }, V.toastInitial),
-      h("div", { style: "font-size:13px; line-height:1.4" }, V.toastText)
-    ) : null,
-    V.sheetOpen ? h("div", { key: "scrim", onClick: V.onCloseSheet, style: "position:absolute; inset:0; background:rgba(32,30,29,.44)" }) : null,
+    appToast(V),
+    appScrim(V),
     sheets(V)
   );
 }
 
-function appHeader(V) {
+// Desktop: a readable working column (toolbar + tree) plus a context sidebar.
+function appDesktop(V) {
+  return h("div", { key: "app", style: "flex:1; min-height:0; display:flex; position:relative" },
+    h("div", { style: "flex:1; min-width:0; max-width:680px; display:flex; flex-direction:column; min-height:0" },
+      appHeader(V, true),
+      appTree(V)
+    ),
+    appSidebar(V),
+    appToast(V),
+    appScrim(V),
+    sheets(V)
+  );
+}
+
+function appToast(V) {
+  return V.toastText ? h("div", { key: "toast", class: "apptoast", style: "position:absolute; bottom:24px; padding:14px 18px; border-radius:28px; background:#201e1d; color:#f9f4ed; display:flex; align-items:center; gap:12px; box-shadow:0 12px 32px rgba(46,43,37,.3); animation:riseIn .3s ease" },
+    h("div", { style: "width:26px; height:26px; flex:none; border-radius:999px; background:" + V.toastColor + "; color:#fff2eb; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center" }, V.toastInitial),
+    h("div", { style: "font-size:13px; line-height:1.4" }, V.toastText)
+  ) : null;
+}
+
+function appScrim(V) {
+  return V.sheetOpen ? h("div", { key: "scrim", onClick: V.onCloseSheet, style: "position:absolute; inset:0; background:rgba(32,30,29,.44)" }) : null;
+}
+
+function appSidebar(V) {
+  return h("div", { class: "noscroll", style: "width:360px; flex:none; overflow:auto; border-left:1.5px solid #dcd3c4; background:#f9f4ed; padding:20px; display:flex; flex-direction:column; gap:20px" },
+    h("div", { style: "padding:20px; border-radius:24px; background:#ffe1d0; text-align:center" },
+      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#8c491a" }, "Board code"),
+      h("div", { style: "font-family:Caprasimo, serif; font-size:34px; letter-spacing:.14em; color:#8c491a; margin-top:4px" }, V.room),
+      h("div", { style: "font-size:12px; line-height:1.45; color:#645c50; margin-top:8px" }, V.hereLabel + " · anyone with the code can add")
+    ),
+    h("div", { style: "display:flex; gap:8px" },
+      btn({ onClick: V.onOpenShare, style: "flex:1; font-size:13px; font-weight:700; padding:12px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Share code"),
+      btn({ onClick: V.onOpenProjection, title: "Full-screen live view for a TV or projector", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:12px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+        h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project"))
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:11px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:19px" }, "Who's adding"),
+      h("div", { style: "display:flex; flex-direction:column; gap:12px" },
+        V.contributors.map((c, i) => h("div", { key: "sc" + i, style: "display:flex; align-items:center; justify-content:space-between; gap:8px" },
+          h("div", { style: "display:flex; align-items:center; gap:10px; min-width:0" },
+            h("div", { style: "width:32px; height:32px; flex:none; border-radius:999px; background:" + c.c + "; color:#fff2eb; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center" }, c.i),
+            h("div", { style: "min-width:0" },
+              h("div", { style: "font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, c.name),
+              c.doing ? h("div", { style: "font-size:11px; color:#82796a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, c.doing) : null
+            )
+          ),
+          h("div", { style: "font-size:11px; color:#82796a; flex:none; white-space:nowrap" }, c.when)
+        ))
+      )
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:10px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:19px" }, "Just happened"),
+      h("div", { style: "display:flex; flex-direction:column; gap:9px" },
+        V.feed.map((f, i) => h("div", { key: "sf" + i, style: "font-size:13px; line-height:1.45; color:#201e1d" },
+          h("span", { style: "font-weight:800" }, f.who), " " + f.text + " ",
+          h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; color:#82796a" }, f.t)
+        ))
+      )
+    )
+  );
+}
+
+function appHeader(V, wide) {
   return h("div", { style: "flex:none; background:#f9f4ed; border-bottom:1.5px solid #dcd3c4; padding:8px 18px 9px; display:flex; flex-direction:column; gap:7px" },
     h("div", { style: "display:flex; align-items:center; gap:8px" },
       btn({ onClick: V.onGoLanding, title: "Roundtable home", style: "font-family:Caprasimo, serif; flex:none; width:32px; height:32px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; font-size:15px; cursor:pointer", hover: "background:#b2622d" }, "R"),
@@ -1031,7 +1110,7 @@ function appHeader(V) {
       btn({ onClick: V.onOpenDownload, style: "flex:1; font-size:12px; font-weight:700; padding:9px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Download"),
       btn({ onClick: V.onOpenUpgrade, style: "flex:1; font-size:12px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
     ),
-    V.shared ? h("div", { style: "display:flex; align-items:center; flex-wrap:wrap; gap:7px" },
+    (V.shared && !wide) ? h("div", { style: "display:flex; align-items:center; flex-wrap:wrap; gap:7px" },
       btn({ onClick: V.onOpenBoard, style: "flex:none; display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px; border:none; background:#ffe1d0; cursor:pointer" },
         h("span", { style: "width:8px; height:8px; border-radius:999px; background:#7a8a5e; display:block" }),
         h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:13px; letter-spacing:.12em; font-weight:500; color:#8c491a" }, V.room),
@@ -1207,20 +1286,24 @@ function projRow(r) {
 }
 
 /* ------------------------------ sheets ----------------------------------- */
-const SHEET = "position:absolute; left:0; right:0; bottom:0; overflow-y:auto; background:#f9f4ed; border-radius:36px 36px 46px 46px; padding:14px 22px 28px; display:flex; flex-direction:column; box-shadow:0 12px 32px rgba(46,43,37,.3); animation:riseIn .28s ease";
+// Positioning + corner radius live in the .sheet CSS class (bottom sheet on
+// phones, centered modal on wide screens); this holds only the shared look.
+const SHEET = "overflow-y:auto; background:#f9f4ed; padding:14px 22px 28px; display:flex; flex-direction:column; box-shadow:0 12px 32px rgba(46,43,37,.3); animation:riseIn .28s ease";
 const GRAB = h("div", { style: "width:44px; height:5px; border-radius:999px; background:#dcd3c4; align-self:center" });
 const fieldStyle = "font-size:15px; padding:14px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none";
 
 function sheets(V) {
-  if (V.isEditSheet) return editSheet(V);
-  if (V.isDeleteSheet) return deleteSheet(V);
-  if (V.isFlagSheet) return flagSheet(V);
-  if (V.isBoardSheet) return boardSheet(V);
-  if (V.isShareSheet) return shareSheet(V);
-  if (V.isLogSheet) return logSheet(V);
-  if (V.isDownloadSheet) return downloadSheet(V);
-  if (V.isUpgradeSheet) return upgradeSheet(V);
-  return null;
+  let n = null;
+  if (V.isEditSheet) n = editSheet(V);
+  else if (V.isDeleteSheet) n = deleteSheet(V);
+  else if (V.isFlagSheet) n = flagSheet(V);
+  else if (V.isBoardSheet) n = boardSheet(V);
+  else if (V.isShareSheet) n = shareSheet(V);
+  else if (V.isLogSheet) n = logSheet(V);
+  else if (V.isDownloadSheet) n = downloadSheet(V);
+  else if (V.isUpgradeSheet) n = upgradeSheet(V);
+  if (n) n.props.class = ("sheet " + (n.props.class || "")).trim();
+  return n;
 }
 
 function editSheet(V) {
@@ -1495,6 +1578,9 @@ function upgradeSheet(V) {
       App.state.myName = sess.myName || App.state.myName;
     }
   } catch (e) {}
+  App._mq = window.matchMedia("(min-width: 1000px)");
+  App.state.wide = App._mq.matches;
+  App._mq.addEventListener("change", e => App.setState({ wide: e.matches }));
   App.render();
   if (App.state.step === "app") App.startLive();
 })();
