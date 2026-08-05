@@ -27,33 +27,20 @@
   .noscroll::-webkit-scrollbar { display: none; }
   .noscroll { scrollbar-width: none; }
 
-  /* Responsive app shell: full-screen on phones, tidy centered app window on larger screens */
+  /* Full-bleed responsive app shell: fills the whole viewport on every screen */
   #stage {
     min-height: 100dvh;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    background: radial-gradient(130% 110% at 50% 0%, #ece0c8 0%, #e4d9c2 58%);
+    background: #f5ead8;
   }
   #device {
     position: relative;
     width: 100%;
-    max-width: 440px;
     height: 100dvh;
     background: #f5ead8;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-  }
-  @media (min-width: 500px) {
-    #stage { padding: 28px; }
-    #device {
-      height: min(920px, calc(100dvh - 56px));
-      border-radius: 26px;
-      box-shadow: 0 18px 50px rgba(46,43,37,.20);
-      border: 1px solid #dcd3c4;
-    }
   }
   .screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
