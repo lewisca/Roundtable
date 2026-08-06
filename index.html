@@ -301,7 +301,7 @@ const App = {
     editParent: null,
     deleteId: null,
     draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "",
-    draftPartner: "", draftPartnerBorn: "", draftPartnerDied: "", draftPartnerPlace: "", draftMore: false,
+    draftPartners: [], draftCoParent: "", draftMore: false,
     tick: 0,
     toast: null,
     fresh: {},
@@ -481,6 +481,8 @@ const App = {
   accent() { return ACCENT; },
   gen(d) { return GEN[d % GEN.length]; },
   initials(n) { return (n || "").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?"; },
+  // A person's partners as a list. Back-compatible with the old single `partner`.
+  partnersOf(p) { return (p && p.partners) ? p.partners : (p && p.partner && p.partner.name ? [p.partner] : []); },
   years(p) {
     if (!p) return "";
     if (p.born && p.died) return p.born + " – " + p.died;
@@ -554,26 +556,28 @@ const App = {
 
   openNew(parentId) {
     this.pushUndo();
-    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartner: "", draftPartnerBorn: "", draftPartnerDied: "", draftPartnerPlace: "", draftMore: false });
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
   },
   openEdit(id) {
     const p = this.state.people.find(x => x.id === id);
+    const partners = this.partnersOf(p).map(pp => ({ name: pp.name || "", born: pp.born || "", died: pp.died || "", place: pp.place || "" }));
     this.setState({
       sheet: "edit", editId: id, editIsNew: false,
       draftName: p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
-      draftNote: p.note || "", draftPartner: p.partner ? p.partner.name : "",
-      draftPartnerBorn: p.partner && p.partner.born ? p.partner.born : "",
-      draftPartnerDied: p.partner && p.partner.died ? p.partner.died : "",
-      draftPartnerPlace: p.partner && p.partner.place ? p.partner.place : "",
-      draftMore: !!p.partner
+      draftNote: p.note || "", draftPartners: partners, draftCoParent: p.coParent || "",
+      draftMore: !!(partners.length || p.born || p.died || p.place || p.note)
     });
   },
   saveEdit() {
     const s = this.state, name = s.draftName.trim();
     if (!name) return;
+    const partners = (s.draftPartners || [])
+      .map(pp => ({ name: (pp.name || "").trim(), born: pp.born || "", died: pp.died || "", place: pp.place || "" }))
+      .filter(pp => pp.name);
     const fields = {
       name, born: s.draftBorn, died: s.draftDied, place: s.draftPlace, note: s.draftNote,
-      partner: s.draftPartner.trim() ? { name: s.draftPartner.trim(), born: s.draftPartnerBorn, died: s.draftPartnerDied, place: s.draftPartnerPlace } : null
+      partners: partners, partner: null,               // partner[] is authoritative; clear legacy single
+      coParent: s.draftCoParent ? s.draftCoParent : null
     };
     this.pushUndo();
     this.setState(st => {
@@ -631,7 +635,7 @@ const App = {
     const indentAt = d => d <= cap ? d * ind : cap * ind + (d - cap) * stepAfter;
     const stub = (a, b) => Math.max(6, Math.round((indentAt(a) - indentAt(b)) * 0.55));
     const rows = [];
-    const matches = p => !q || [p.name, p.place, p.note, p.partner && p.partner.name, p.born, p.addedBy].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
+    const matches = p => !q || [p.name, p.place, p.note, this.partnersOf(p).map(pp => pp.name).join(" "), p.coParent, p.born, p.addedBy].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
     const walk = (parentId, depth) => {
       const list = this.kidsOf(parentId);
       list.forEach((p, i) => {
@@ -643,8 +647,8 @@ const App = {
         rows.push({
           isCard: true, isAdd: false, id: p.id, name: p.name, years: this.years(p),
           initials: this.initials(p.name), detail: detail,
-          partnerName: p.partner ? p.partner.name : null,
-          partnerYears: p.partner ? this.years(p.partner) : "",
+          partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
+          coParent: p.coParent || null,
           color: g.color, soft: g.soft, depth: depth, pad: indentAt(depth),
           ribLeft: depth ? indentAt(depth - 1) + 6 : 0, ribW: depth ? stub(depth, depth - 1) : Math.round(ind * 0.55),
           ribColor: this.gen(Math.max(0, depth - 1)).color,
@@ -687,7 +691,7 @@ const App = {
 
   renderVals() {
     const s = this.state;
-    const total = s.people.length + s.people.filter(p => p.partner && p.partner.name).length;
+    const total = s.people.length + s.people.reduce((n, p) => n + this.partnersOf(p).filter(pp => pp.name).length, 0);
     const gens = s.people.reduce((m, p) => Math.max(m, this.depthOf(p) + 1), 1);
     const rows = this.flatten(false);
     const anyMatch = rows.some(r => r.isCard && r.dim === 1);
@@ -700,6 +704,11 @@ const App = {
     ];
     const dupName = (s.editIsNew && s.draftName.trim())
       ? (s.people.find(p => p.name.toLowerCase() === s.draftName.trim().toLowerCase()) || {}).name : null;
+    // For the "other parent" picker: the partners of this person's parent.
+    const editingPerson = s.editId ? s.people.find(p => p.id === s.editId) : null;
+    const coParentId = s.editIsNew ? s.editParent : (editingPerson ? editingPerson.parentId : null);
+    const coParentPerson = coParentId ? s.people.find(p => p.id === coParentId) : null;
+    const coParentOptions = coParentPerson ? this.partnersOf(coParentPerson).map(pp => pp.name).filter(Boolean) : [];
     const delP = s.deleteId ? s.people.find(p => p.id === s.deleteId) : null;
     const delBelow = s.deleteId ? this.below(s.deleteId) : 0;
     const showContrib = s.room === DEMO_ROOM ? contributors : contributors.slice(0, 1);
@@ -870,21 +879,25 @@ const App = {
       editTitle: s.editIsNew ? "Add a person" : "Edit person",
       editSub: s.editIsNew ? "A name is all we need. Details any time later." : "Everyone on the board sees the change.",
       draftName: s.draftName, draftBorn: s.draftBorn, draftDied: s.draftDied,
-      draftPlace: s.draftPlace, draftNote: s.draftNote, draftPartner: s.draftPartner, draftMore: s.draftMore,
+      draftPlace: s.draftPlace, draftNote: s.draftNote, draftMore: s.draftMore,
       onDraftName: e => this.setState({ draftName: e.target.value }),
       onDraftBorn: e => this.setState({ draftBorn: e.target.value }),
       onDraftDied: e => this.setState({ draftDied: e.target.value }),
       onDraftPlace: e => this.setState({ draftPlace: e.target.value }),
       onDraftNote: e => this.setState({ draftNote: e.target.value }),
-      onDraftPartner: e => this.setState({ draftPartner: e.target.value }),
-      draftPartnerBorn: s.draftPartnerBorn, draftPartnerDied: s.draftPartnerDied, draftPartnerPlace: s.draftPartnerPlace,
-      hasPartner: !!s.draftPartner.trim(),
-      onDraftPartnerBorn: e => this.setState({ draftPartnerBorn: e.target.value }),
-      onDraftPartnerDied: e => this.setState({ draftPartnerDied: e.target.value }),
-      onDraftPartnerPlace: e => this.setState({ draftPartnerPlace: e.target.value }),
-      onRemovePartner: () => this.setState({ draftPartner: "", draftPartnerBorn: "", draftPartnerDied: "", draftPartnerPlace: "" }),
+      draftPartners: s.draftPartners,
+      setPartnerField: (i, field) => (e) => this.setState(st => {
+        const a = st.draftPartners.slice();
+        a[i] = Object.assign({}, a[i], { [field]: e.target.value });
+        return { draftPartners: a };
+      }),
+      onAddPartner: () => this.setState(st => ({ draftPartners: st.draftPartners.concat([{ name: "", born: "", died: "", place: "" }]), draftMore: true })),
+      removePartner: (i) => () => this.setState(st => ({ draftPartners: st.draftPartners.filter((_, j) => j !== i) })),
+      coParentOptions: coParentOptions,
+      draftCoParent: s.draftCoParent,
+      onDraftCoParent: e => this.setState({ draftCoParent: e.target.value }),
       onToggleMore: () => this.setState({ draftMore: !s.draftMore }),
-      moreLabel: s.draftMore ? "Hide dates, place, partner" : "Add dates, place, a spouse or partner  →",
+      moreLabel: s.draftMore ? "Hide dates, place, partners" : "Add dates, place, spouses or partners  →",
       dupWarn: dupName ? "Someone already added a " + dupName + ". Add yours anyway — both stay, flagged for a family chat." : null,
       saveLabel: s.draftName.trim() ? (s.editIsNew ? "Add " + s.draftName.trim() : "Save " + s.draftName.trim()) : "Save person",
       onSaveEdit: () => this.saveEdit(),
@@ -914,7 +927,7 @@ const App = {
     const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     const rowHtml = rows.map(r => `<div style="margin-left:${r.depth * 22}px;padding:8px 12px;border-left:5px solid ${r.color};margin-bottom:6px">
         <strong style="font-size:16px">${esc(r.name)}</strong> <span style="color:#82796a">${esc(r.years)}</span>
-        ${r.partnerName ? ` &nbsp;♥ ${esc(r.partnerName)} <span style="color:#82796a">${esc(r.partnerYears)}</span>` : ""}
+        ${r.partners.map(pt => ` &nbsp;♥ ${esc(pt.name)} <span style="color:#82796a">${esc(pt.years)}</span>`).join("")}${r.coParent ? ` <span style="color:#82796a; font-style:italic">· with ${esc(r.coParent)}</span>` : ""}
         ${r.detail ? `<div style="color:#645c50;font-size:13px">${esc(r.detail)}</div>` : ""}
         <div style="color:#c0b6a5;font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(r.byLine)}</div>
       </div>`).join("");
@@ -971,7 +984,8 @@ const App = {
       const tx = ax + 30;
       b += `<text x="${tx}" y="${midY - 3}" font-family="Georgia,serif" font-weight="bold" font-size="20" fill="#201e1d">${esc(r.name)}<tspan font-family="Arial,sans-serif" font-weight="normal" font-size="12" fill="#82796a">   ${esc(r.years)}</tspan></text>`;
       const sub = [];
-      if (r.partnerName) sub.push("♥ " + r.partnerName + (r.partnerYears ? " " + r.partnerYears : ""));
+      r.partners.forEach(pt => sub.push("♥ " + pt.name + (pt.years ? " " + pt.years : "")));
+      if (r.coParent) sub.push("with " + r.coParent);
       if (r.detail) sub.push(r.detail);
       if (sub.length) b += `<text x="${tx}" y="${midY + 15}" font-family="Arial,sans-serif" font-size="12" fill="#645c50">${esc(sub.join("   ·   "))}</text>`;
       b += `<text x="${tx}" y="${midY + 31}" font-family="Arial,sans-serif" font-size="9" letter-spacing="1" fill="#c0b6a5">${esc((r.byLine || "").toUpperCase())}</text>`;
@@ -1294,11 +1308,12 @@ function row(r) {
             h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; color:#201e1d; overflow-wrap:anywhere; min-width:0" }, r.name),
             h("span", { style: "font-size:12px; color:#82796a" }, r.years)
           ),
-          r.partnerName ? h("span", { style: "align-self:flex-start; display:flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; background:" + r.soft },
+          r.partners.map((pt, i) => h("span", { key: "pp" + i, style: "align-self:flex-start; display:flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; background:" + r.soft },
             h("span", { style: "font-size:11px; color:" + r.color }, "♥"),
-            h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, r.partnerName),
-            h("span", { style: "font-size:11px; color:#82796a" }, r.partnerYears)
-          ) : null,
+            h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, pt.name),
+            pt.years ? h("span", { style: "font-size:11px; color:#82796a" }, pt.years) : null
+          )),
+          r.coParent ? h("span", { style: "align-self:flex-start; font-size:11px; font-style:italic; color:#82796a" }, "· with " + r.coParent) : null,
           r.detail ? h("span", { style: "font-size:12px; line-height:1.4; color:#645c50" }, r.detail) : null,
           h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + r.byColor }, r.byLine),
           r.flagged ? h("span", { style: "align-self:flex-start; font-size:10px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:3px 9px; border-radius:999px" }, "two entries — tap, then open the chat") : null
@@ -1395,10 +1410,11 @@ function projRow(r) {
     h("div", { style: "display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; min-width:0" },
       h("span", { style: "font-family:Caprasimo, serif; font-size:20px; overflow-wrap:anywhere; min-width:0" }, r.name),
       h("span", { style: "font-size:13px; color:#82796a" }, r.years),
-      r.partnerName ? h("span", { style: "display:flex; align-items:center; gap:7px; padding:4px 12px; border-radius:999px; background:" + r.soft },
+      r.partners.map((pt, i) => h("span", { key: "pp" + i, style: "display:flex; align-items:center; gap:7px; padding:4px 12px; border-radius:999px; background:" + r.soft },
         h("span", { style: "font-size:12px; color:" + r.color }, "♥"),
-        h("span", { style: "font-size:14px; font-weight:700" }, r.partnerName)
-      ) : null,
+        h("span", { style: "font-size:14px; font-weight:700" }, pt.name)
+      )),
+      r.coParent ? h("span", { style: "font-size:12px; font-style:italic; color:#82796a" }, "with " + r.coParent) : null,
       h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:" + r.byColor }, r.byLine)
     )
   ));
@@ -1451,21 +1467,30 @@ function editSheet(V) {
       inp({ value: V.draftPlace, onChange: V.onDraftPlace, placeholder: "Where they're from", style: fieldStyle }),
       inp({ value: V.draftNote, onChange: V.onDraftNote, placeholder: "A line about them", style: fieldStyle }),
       h("div", { style: "padding:16px; border-radius:24px; border:1.5px solid #dcd3c4; background:#f5ead8; display:flex; flex-direction:column; gap:12px" },
-        h("div", { style: "display:flex; align-items:center; justify-content:space-between; gap:10px" },
-          h("div", { style: "font-family:Caprasimo, serif; font-size:18px" }, "Spouse or partner"),
-          V.hasPartner ? btn({ onClick: V.onRemovePartner, style: "font-size:12px; font-weight:700; padding:8px 13px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove") : null
-        ),
-        h("div", { style: "display:flex; align-items:center; gap:12px" },
-          h("div", { style: "width:52px; height:52px; flex:none; border-radius:999px; background:repeating-linear-gradient(45deg,#dcd3c4 0 6px,#eee7db 6px 12px)" }),
-          btn({ style: "font-size:13px; font-weight:700; padding:9px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Add a photo")
-        ),
-        inp({ value: V.draftPartner, onChange: V.onDraftPartner, placeholder: "Their name", style: "font-size:16px; padding:14px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none" }),
-        h("div", { style: "display:flex; gap:10px" },
-          inp({ value: V.draftPartnerBorn, onChange: V.onDraftPartnerBorn, placeholder: "Born", style: "flex:1; min-width:0; font-size:15px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none" }),
-          inp({ value: V.draftPartnerDied, onChange: V.onDraftPartnerDied, placeholder: "Died", style: "flex:1; min-width:0; font-size:15px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none" })
-        ),
-        inp({ value: V.draftPartnerPlace, onChange: V.onDraftPartnerPlace, placeholder: "Where they're from", style: "font-size:15px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none" })
-      )
+        h("div", { style: "font-family:Caprasimo, serif; font-size:18px" }, "Spouses & partners"),
+        h("div", { style: "font-size:12px; line-height:1.45; color:#645c50" }, "Add more than one for remarriages, or when children come from different partners."),
+        V.draftPartners.map((pp, i) => h("div", { key: "pt" + i, style: "padding:14px; border-radius:20px; border:1.5px solid #dcd3c4; background:#f9f4ed; display:flex; flex-direction:column; gap:10px" },
+          h("div", { style: "display:flex; align-items:center; justify-content:space-between; gap:10px" },
+            h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Partner " + (i + 1)),
+            btn({ onClick: V.removePartner(i), style: "font-size:12px; font-weight:700; padding:7px 12px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove")
+          ),
+          inp({ value: pp.name, onChange: V.setPartnerField(i, "name"), placeholder: "Their name", style: "font-size:16px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+          h("div", { style: "display:flex; gap:10px" },
+            inp({ value: pp.born, onChange: V.setPartnerField(i, "born"), placeholder: "Born", style: "flex:1; min-width:0; font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+            inp({ value: pp.died, onChange: V.setPartnerField(i, "died"), placeholder: "Died", style: "flex:1; min-width:0; font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
+          ),
+          inp({ value: pp.place, onChange: V.setPartnerField(i, "place"), placeholder: "Where they're from", style: "font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
+        )),
+        btn({ onClick: V.onAddPartner, style: "align-self:flex-start; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:2px dashed #c0b6a5; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, V.draftPartners.length ? "+ Add another spouse or partner" : "+ Add a spouse or partner")
+      ),
+      V.coParentOptions.length ? h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+        h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Other parent"),
+        h("div", { style: "font-size:12px; line-height:1.4; color:#645c50" }, "Which of their parent's partners is the other parent?"),
+        h("select", { onChange: V.onDraftCoParent, style: "font-family:Figtree, system-ui, sans-serif; font-size:15px; padding:13px 16px; border-radius:16px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" },
+          h("option", { value: "", selected: !V.draftCoParent }, "Not specified"),
+          V.coParentOptions.map((nm, i) => h("option", { key: "co" + i, value: nm, selected: nm === V.draftCoParent }, nm))
+        )
+      ) : null
     ) : null,
     h("div", { style: "display:flex; gap:10px" },
       btn({ onClick: V.onCancelEdit, style: "flex:1; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Cancel"),
