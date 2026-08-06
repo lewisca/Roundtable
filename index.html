@@ -1095,9 +1095,13 @@ function viewLanding(V) {
       ))
     ),
     h("div", { style: "flex:1 1 10px; min-height:10px" }),
-    h("div", { style: "position:relative; height:124px; flex:none; border-radius:20px; overflow:hidden; background:repeating-linear-gradient(45deg,#dcd3c4 0 8px,#eee7db 8px 16px); border:1.5px solid #dcd3c4; display:flex; align-items:center; justify-content:center" },
-      btn({ title: "Play the 40-second intro", style: "width:52px; height:52px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; font-size:20px; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.28)", hover: "background:#b2622d" }, "▶"),
-      h("div", { style: "position:absolute; left:14px; bottom:12px; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#645c50" }, "video — 40 sec, how a board works")
+    h("div", { style: "display:flex; flex-direction:column; gap:6px; flex:none" },
+      h("video", {
+        src: "assets/how-roundtable-works.mp4",
+        controls: true, preload: "metadata", playsinline: true,
+        style: "display:block; margin:0 auto; max-height:380px; max-width:100%; width:auto; border-radius:20px; border:1.5px solid #dcd3c4; background:#000"
+      }),
+      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#82796a; text-align:center" }, "how a board works")
     ),
     h("div", { style: "display:flex; flex-direction:column; gap:9px; padding-top:4px" },
       btn({ onClick: V.onStartNow, style: "font-size:17px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.2)", hover: "background:#b2622d" }, "Start now"),
