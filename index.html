@@ -897,7 +897,7 @@ const App = {
       draftCoParent: s.draftCoParent,
       onDraftCoParent: e => this.setState({ draftCoParent: e.target.value }),
       onToggleMore: () => this.setState({ draftMore: !s.draftMore }),
-      moreLabel: s.draftMore ? "Hide dates, place, partners" : "Add dates, place, spouses or partners  →",
+      moreLabel: s.draftMore ? "Hide dates, place, a note" : "Add dates, place, a note  →",
       dupWarn: dupName ? "Someone already added a " + dupName + ". Add yours anyway — both stay, flagged for a family chat." : null,
       saveLabel: s.draftName.trim() ? (s.editIsNew ? "Add " + s.draftName.trim() : "Save " + s.draftName.trim()) : "Save person",
       onSaveEdit: () => this.saveEdit(),
@@ -1465,32 +1465,33 @@ function editSheet(V) {
         inp({ value: V.draftDied, onChange: V.onDraftDied, placeholder: "Died — blank if living", style: "flex:1; min-width:0; " + fieldStyle })
       ),
       inp({ value: V.draftPlace, onChange: V.onDraftPlace, placeholder: "Where they're from", style: fieldStyle }),
-      inp({ value: V.draftNote, onChange: V.onDraftNote, placeholder: "A line about them", style: fieldStyle }),
-      h("div", { style: "padding:16px; border-radius:24px; border:1.5px solid #dcd3c4; background:#f5ead8; display:flex; flex-direction:column; gap:12px" },
-        h("div", { style: "font-family:Caprasimo, serif; font-size:18px" }, "Spouses & partners"),
-        h("div", { style: "font-size:12px; line-height:1.45; color:#645c50" }, "Add more than one for remarriages, or when children come from different partners."),
-        V.draftPartners.map((pp, i) => h("div", { key: "pt" + i, style: "padding:14px; border-radius:20px; border:1.5px solid #dcd3c4; background:#f9f4ed; display:flex; flex-direction:column; gap:10px" },
-          h("div", { style: "display:flex; align-items:center; justify-content:space-between; gap:10px" },
-            h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Partner " + (i + 1)),
-            btn({ onClick: V.removePartner(i), style: "font-size:12px; font-weight:700; padding:7px 12px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove")
-          ),
-          inp({ value: pp.name, onChange: V.setPartnerField(i, "name"), placeholder: "Their name", style: "font-size:16px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-          h("div", { style: "display:flex; gap:10px" },
-            inp({ value: pp.born, onChange: V.setPartnerField(i, "born"), placeholder: "Born", style: "flex:1; min-width:0; font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-            inp({ value: pp.died, onChange: V.setPartnerField(i, "died"), placeholder: "Died", style: "flex:1; min-width:0; font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
-          ),
-          inp({ value: pp.place, onChange: V.setPartnerField(i, "place"), placeholder: "Where they're from", style: "font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
-        )),
-        btn({ onClick: V.onAddPartner, style: "align-self:flex-start; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:2px dashed #c0b6a5; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, V.draftPartners.length ? "+ Add another spouse or partner" : "+ Add a spouse or partner")
-      ),
-      V.coParentOptions.length ? h("div", { style: "display:flex; flex-direction:column; gap:8px" },
-        h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Other parent"),
-        h("div", { style: "font-size:12px; line-height:1.4; color:#645c50" }, "Which of their parent's partners is the other parent?"),
-        h("select", { onChange: V.onDraftCoParent, style: "font-family:Figtree, system-ui, sans-serif; font-size:15px; padding:13px 16px; border-radius:16px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" },
-          h("option", { value: "", selected: !V.draftCoParent }, "Not specified"),
-          V.coParentOptions.map((nm, i) => h("option", { key: "co" + i, value: nm, selected: nm === V.draftCoParent }, nm))
-        )
-      ) : null
+      inp({ value: V.draftNote, onChange: V.onDraftNote, placeholder: "A line about them", style: fieldStyle })
+    ) : null,
+    // Spouses & partners — always visible (not hidden behind the "more" toggle)
+    h("div", { style: "padding:16px; border-radius:24px; border:1.5px solid #dcd3c4; background:#f5ead8; display:flex; flex-direction:column; gap:12px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:18px" }, "Spouses & partners"),
+      h("div", { style: "font-size:12px; line-height:1.45; color:#645c50" }, "Add more than one for remarriages, or when children come from different partners."),
+      V.draftPartners.map((pp, i) => h("div", { key: "pt" + i, style: "padding:14px; border-radius:20px; border:1.5px solid #dcd3c4; background:#f9f4ed; display:flex; flex-direction:column; gap:10px" },
+        h("div", { style: "display:flex; align-items:center; justify-content:space-between; gap:10px" },
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Partner " + (i + 1)),
+          btn({ onClick: V.removePartner(i), style: "font-size:12px; font-weight:700; padding:7px 12px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove")
+        ),
+        inp({ value: pp.name, onChange: V.setPartnerField(i, "name"), placeholder: "Their name", style: "font-size:16px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+        h("div", { style: "display:flex; gap:10px" },
+          inp({ value: pp.born, onChange: V.setPartnerField(i, "born"), placeholder: "Born", style: "flex:1; min-width:0; font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+          inp({ value: pp.died, onChange: V.setPartnerField(i, "died"), placeholder: "Died", style: "flex:1; min-width:0; font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
+        ),
+        inp({ value: pp.place, onChange: V.setPartnerField(i, "place"), placeholder: "Where they're from", style: "font-size:15px; padding:12px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
+      )),
+      btn({ onClick: V.onAddPartner, style: "align-self:flex-start; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:2px dashed #c0b6a5; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, V.draftPartners.length ? "+ Add another spouse or partner" : "+ Add a spouse or partner")
+    ),
+    V.coParentOptions.length ? h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Other parent"),
+      h("div", { style: "font-size:12px; line-height:1.4; color:#645c50" }, "Which of their parent's partners is the other parent?"),
+      h("select", { onChange: V.onDraftCoParent, style: "font-family:Figtree, system-ui, sans-serif; font-size:15px; padding:13px 16px; border-radius:16px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" },
+        h("option", { value: "", selected: !V.draftCoParent }, "Not specified"),
+        V.coParentOptions.map((nm, i) => h("option", { key: "co" + i, value: nm, selected: nm === V.draftCoParent }, nm))
+      )
     ) : null,
     h("div", { style: "display:flex; gap:10px" },
       btn({ onClick: V.onCancelEdit, style: "flex:1; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Cancel"),
