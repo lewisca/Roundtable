@@ -293,6 +293,7 @@ const App = {
     projection: false,
     wide: false,
     query: "",
+    genView: "all",
     collapsed: {},
     selected: null,
     sheet: null,
@@ -455,7 +456,7 @@ const App = {
     const data = this.loadRoom(room);
     if (data) {
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", toast: null,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", toast: null,
         familyName: data.familyName || "", people: data.people || [], feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
         collapsed: data.collapsed || {}, subscribed: !!data.subscribed
@@ -464,7 +465,7 @@ const App = {
       // brand-new empty board
       const started = { who: this.state.myName || "You", i: this.initials(this.state.myName || "You"), c: "#201e1d", verb: "started", target: "board " + room, kind: "board", when: this.stamp() };
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", toast: null,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", toast: null,
         familyName: "", people: [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, subscribed: false
       });
     }
@@ -635,6 +636,8 @@ const App = {
     const indentAt = d => d <= cap ? d * ind : cap * ind + (d - cap) * stepAfter;
     const stub = (a, b) => Math.max(6, Math.round((indentAt(a) - indentAt(b)) * 0.55));
     const rows = [];
+    // Generation filter: null = full tree; a number = flat list of just that generation.
+    const genView = (!forBig && typeof s.genView === "number") ? s.genView : null;
     const matches = p => !q || [p.name, p.place, p.note, this.partnersOf(p).map(pp => pp.name).join(" "), p.coParent, p.born, p.addedBy].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
     const walk = (parentId, depth) => {
       const list = this.kidsOf(parentId);
@@ -644,33 +647,38 @@ const App = {
         const kids = this.kidsOf(p.id);
         const isFresh = !!s.fresh[p.id];
         const detail = [p.place, p.note].filter(Boolean).join(" · ");
-        rows.push({
-          isCard: true, isAdd: false, id: p.id, name: p.name, years: this.years(p),
-          initials: this.initials(p.name), detail: detail,
-          partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
-          coParent: p.coParent || null,
-          color: g.color, soft: g.soft, depth: depth, pad: indentAt(depth),
-          ribLeft: depth ? indentAt(depth - 1) + 6 : 0, ribW: depth ? stub(depth, depth - 1) : Math.round(ind * 0.55),
-          ribColor: this.gen(Math.max(0, depth - 1)).color,
-          showRib: depth > 0, showSpine: depth > 0 && i < list.length - 1,
-          borderColor: s.selected === p.id ? g.color : (isFresh ? this.accent() : (matches(p) && q ? g.color : "#dcd3c4")),
-          borderW: s.selected === p.id ? 3 : (isFresh || (q && matches(p)) ? 2 : 1),
-          dim: q && !matches(p) ? 0.32 : 1,
-          hasKids: kids.length > 0, below: this.below(p.id),
-          chevron: collapsed ? "▸" : "▾",
-          selected: s.selected === p.id,
-          flagged: !!p.flag,
-          onFlag: () => this.setState({ sheet: "flag" }),
-          byLine: isFresh ? "just added by " + s.fresh[p.id] : "added by " + (p.addedBy || "someone"),
-          byColor: isFresh ? this.accent() : "#c0b6a5",
-          onToggle: () => this.setState(st => ({ collapsed: Object.assign({}, st.collapsed, { [p.id]: !st.collapsed[p.id] }) })),
-          onSelect: () => this.setState(st => ({ selected: st.selected === p.id ? null : p.id })),
-          onAdd: () => this.openNew(p.id),
-          onEdit: () => this.openEdit(p.id),
-          onSibling: () => this.openNew(p.parentId),
-          onDelete: () => this.setState({ sheet: "delete", deleteId: p.id })
-        });
-        if (!collapsed && kids.length) {
+        const flat = genView !== null;   // one-generation view is a flat list, no connectors
+        if (genView === null || depth === genView) {
+          rows.push({
+            isCard: true, isAdd: false, id: p.id, name: p.name, years: this.years(p),
+            initials: this.initials(p.name), detail: detail,
+            partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
+            coParent: p.coParent || null,
+            color: g.color, soft: g.soft, depth: depth, pad: flat ? 0 : indentAt(depth),
+            ribLeft: flat ? 0 : (depth ? indentAt(depth - 1) + 6 : 0), ribW: flat ? 0 : (depth ? stub(depth, depth - 1) : Math.round(ind * 0.55)),
+            ribColor: this.gen(Math.max(0, depth - 1)).color,
+            showRib: !flat && depth > 0, showSpine: !flat && depth > 0 && i < list.length - 1,
+            borderColor: s.selected === p.id ? g.color : (isFresh ? this.accent() : (matches(p) && q ? g.color : "#dcd3c4")),
+            borderW: s.selected === p.id ? 3 : (isFresh || (q && matches(p)) ? 2 : 1),
+            dim: q && !matches(p) ? 0.32 : 1,
+            hasKids: !flat && kids.length > 0, below: this.below(p.id),
+            chevron: collapsed ? "▸" : "▾",
+            selected: s.selected === p.id,
+            flagged: !!p.flag,
+            onFlag: () => this.setState({ sheet: "flag" }),
+            byLine: isFresh ? "just added by " + s.fresh[p.id] : "added by " + (p.addedBy || "someone"),
+            byColor: isFresh ? this.accent() : "#c0b6a5",
+            onToggle: () => this.setState(st => ({ collapsed: Object.assign({}, st.collapsed, { [p.id]: !st.collapsed[p.id] }) })),
+            onSelect: () => this.setState(st => ({ selected: st.selected === p.id ? null : p.id })),
+            onAdd: () => this.openNew(p.id),
+            onEdit: () => this.openEdit(p.id),
+            onSibling: () => this.openNew(p.parentId),
+            onDelete: () => this.setState({ sheet: "delete", deleteId: p.id })
+          });
+        }
+        if (flat) {
+          if (depth < genView) walk(p.id, depth + 1);   // keep descending until we reach the chosen generation
+        } else if (!collapsed && kids.length) {
           walk(p.id, depth + 1);
           if (!forBig) {
             const cg = this.gen(depth + 1);
@@ -693,6 +701,15 @@ const App = {
     const s = this.state;
     const total = s.people.length + s.people.reduce((n, p) => n + this.partnersOf(p).filter(pp => pp.name).length, 0);
     const gens = s.people.reduce((m, p) => Math.max(m, this.depthOf(p) + 1), 1);
+    const genCounts = [];
+    s.people.forEach(p => { const d = this.depthOf(p); genCounts[d] = (genCounts[d] || 0) + 1; });
+    const genFilters = [{ key: "all", label: "All", color: this.accent(), count: null }]
+      .concat(Array.from({ length: gens }, (_, d) => ({ key: d, label: "Gen " + (d + 1), color: GEN[d].color, count: genCounts[d] || 0 })))
+      .map(o => ({
+        label: o.label, count: o.count, color: o.color,
+        active: (o.key === "all") ? (s.genView === "all") : (s.genView === o.key),
+        onPick: () => this.setState({ genView: o.key, selected: null })
+      }));
     const rows = this.flatten(false);
     const anyMatch = rows.some(r => r.isCard && r.dim === 1);
     const contributors = [
@@ -750,8 +767,11 @@ const App = {
       boardTitle: s.joining ? "Join the family board" : "Create your board",
       familyName: s.familyName,
       onFamilyName: e => this.setState({ familyName: e.target.value }),
-      countLine: total + " people · " + gens + " gens",
+      countLine: (typeof s.genView === "number")
+        ? ("Generation " + (s.genView + 1) + " · " + (genCounts[s.genView] || 0) + " " + ((genCounts[s.genView] || 0) === 1 ? "person" : "people"))
+        : (total + " people · " + gens + " gens"),
       peopleCount: total,
+      genFilters: genFilters,
       gensCount: gens,
       hereLabel: (s.room === DEMO_ROOM ? "5 here" : "1 here"),
       wide: s.wide,
@@ -1268,10 +1288,12 @@ function appHeader(V, wide) {
       h("span", { style: "font-size:11px; font-weight:800; color:#56633f; white-space:nowrap" }, "· renews " + V.renewDate)
     ) : null,
     h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.06em; color:#82796a" }, V.countLine),
-    h("div", { style: "display:flex; gap:14px; flex-wrap:wrap" },
-      V.legend.map((g, i) => h("div", { key: "lg" + i, style: "display:flex; align-items:center; gap:6px" },
-        h("span", { style: "width:18px; height:6px; border-radius:999px; background:" + g.color + "; display:block" }),
-        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#82796a" }, g.label)
+    h("div", { style: "display:flex; gap:6px; flex-wrap:wrap; align-items:center" },
+      V.genFilters.map((f, i) => btn({ key: "gf" + i, onClick: f.onPick, title: f.label === "All" ? "Show every generation" : "Show only " + f.label,
+        style: "display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.06em; font-weight:700; padding:6px 11px; border-radius:999px; cursor:pointer; border:1.5px solid " + (f.active ? f.color : "#dcd3c4") + "; background:" + (f.active ? f.color : "#f9f4ed") + "; color:" + (f.active ? "#fff2eb" : "#645c50") },
+        f.label === "All" ? null : h("span", { style: "width:14px; height:5px; border-radius:999px; display:block; background:" + (f.active ? "#fff2eb" : f.color) }),
+        h("span", null, f.label.toUpperCase()),
+        f.count != null ? h("span", { style: "opacity:.75" }, "(" + f.count + ")") : null
       ))
     )
   );
