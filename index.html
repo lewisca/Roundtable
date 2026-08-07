@@ -622,19 +622,37 @@ const App = {
     this.flashToast();
   },
   clock() { const d = new Date(); let hh = d.getHours() % 12 || 12; return hh + ":" + String(d.getMinutes()).padStart(2, "0"); },
-  removePerson() {
+  removePerson(mode) {
     const id = this.state.deleteId;
-    const ids = [id].concat(this.descendants(id));
-    this.pushUndo();
     const gone = this.state.people.find(p => p.id === id);
-    const extra = ids.length - 1;
-    this.setState(s => ({
-      people: s.people.filter(p => ids.indexOf(p.id) === -1),
-      sheet: null, deleteId: null, selected: null,
-      log: this.logEntry(s, "removed", gone ? gone.name : "someone", "remove",
-        extra ? "and the " + extra + " " + (extra === 1 ? "person" : "people") + " below them" : null),
-      toast: { text: "Removed. Undo brings them back.", i: "↶", c: "#8c491a" }
-    }));
+    if (!gone) return;
+    this.pushUndo();
+    const first = (gone.name || "someone").split(" ")[0];
+    if (mode === "one") {
+      // Remove just this person; promote their children up to this person's
+      // parent (or make them roots), so the branch below survives.
+      const newParent = gone.parentId || null;
+      const kids = this.kidsOf(id).length;
+      this.setState(s => ({
+        people: s.people
+          .filter(p => p.id !== id)
+          .map(p => p.parentId === id ? Object.assign({}, p, { parentId: newParent }) : p),
+        sheet: null, deleteId: null, selected: null,
+        log: this.logEntry(s, "removed", gone.name, "remove",
+          kids ? "kept the " + kids + " " + (kids === 1 ? "child" : "children") + " below, moved up a generation" : null),
+        toast: { text: "Removed " + first + " — their branch stayed. Undo to bring them back.", i: "↶", c: "#8c491a" }
+      }));
+    } else {
+      const ids = [id].concat(this.descendants(id));
+      const extra = ids.length - 1;
+      this.setState(s => ({
+        people: s.people.filter(p => ids.indexOf(p.id) === -1),
+        sheet: null, deleteId: null, selected: null,
+        log: this.logEntry(s, "removed", gone.name, "remove",
+          extra ? "and the " + extra + " " + (extra === 1 ? "person" : "people") + " below them" : null),
+        toast: { text: "Removed. Undo brings them back.", i: "↶", c: "#8c491a" }
+      }));
+    }
     this.flashToast();
   },
   descendants(id, out) {
@@ -746,6 +764,8 @@ const App = {
     const coParentOptions = coParentPerson ? this.partnersOf(coParentPerson).map(pp => pp.name).filter(Boolean) : [];
     const delP = s.deleteId ? s.people.find(p => p.id === s.deleteId) : null;
     const delBelow = s.deleteId ? this.below(s.deleteId) : 0;
+    const delParent = delP && delP.parentId ? s.people.find(p => p.id === delP.parentId) : null;
+    const delParentFirst = delParent ? delParent.name.split(" ")[0] : null;
     const showContrib = s.room === DEMO_ROOM ? contributors : contributors.slice(0, 1);
 
     return {
@@ -940,8 +960,18 @@ const App = {
       saveLabel: s.draftName.trim() ? (s.editIsNew ? "Add " + s.draftName.trim() : "Save " + s.draftName.trim()) : "Save person",
       onSaveEdit: () => this.saveEdit(),
       onCancelEdit: () => this.setState({ sheet: null }),
-      deleteBody: delP ? (delP.name + " comes off the tree" + (delBelow ? ", along with the " + delBelow + " " + (delBelow === 1 ? "person" : "people") + " below them" : "") + (s.shared ? ", on everyone’s screen" : "") + ". Undo brings them back.") : "",
-      onConfirmDelete: () => this.removePerson(),
+      delHasKids: delBelow > 0,
+      delFirstName: delP ? delP.name.split(" ")[0] : "",
+      delBelowCount: delBelow,
+      deleteBody: delP ? (
+        delBelow
+          ? (delP.name + " has " + delBelow + " " + (delBelow === 1 ? "person" : "people") + " below them. Remove just " + delP.name.split(" ")[0] + " and "
+              + (delParentFirst ? "their children move up under " + delParentFirst : "their children become their own branch")
+              + " — or remove " + delP.name.split(" ")[0] + " and everyone below." + (s.shared ? " Everyone sees it." : ""))
+          : (delP.name + " comes off the tree" + (s.shared ? ", on everyone’s screen" : "") + ". Undo brings them back.")
+      ) : "",
+      onRemoveOne: () => this.removePerson("one"),
+      onRemoveAll: () => this.removePerson("subtree"),
       invite: "Help us build the " + s.familyName + " tree at the reunion.\n\n1. Open the link\n2. Tap “I have a code already”\n3. Type in the board code: " + s.room + "\n\nThen add the relatives you know best. Takes about two minutes.",
       onCopyInvite: () => { this.copy(this.renderVals().invite); this.setState({ sheet: null, toast: { text: "Message copied — paste it in the group text", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
       onTextIt: () => {
@@ -1550,10 +1580,16 @@ function deleteSheet(V) {
     GRAB,
     h("div", { style: "font-family:Caprasimo, serif; font-size:24px" }, "Remove this person?"),
     h("div", { style: "font-size:15px; line-height:1.5; color:#645c50" }, V.deleteBody),
-    h("div", { style: "display:flex; gap:10px" },
-      btn({ onClick: V.onCloseSheet, style: "flex:2; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Keep them"),
-      btn({ onClick: V.onConfirmDelete, style: "flex:1; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#8c491a; color:#fff2eb; cursor:pointer" }, "Remove")
-    )
+    V.delHasKids
+      ? h("div", { style: "display:flex; flex-direction:column; gap:10px" },
+          btn({ onClick: V.onRemoveOne, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#8c491a; color:#fff2eb; cursor:pointer", hover: "background:#7a3d16" }, "Remove just " + V.delFirstName),
+          btn({ onClick: V.onRemoveAll, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove " + V.delFirstName + " & the " + V.delBelowCount + " below"),
+          btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Keep them")
+        )
+      : h("div", { style: "display:flex; gap:10px" },
+          btn({ onClick: V.onCloseSheet, style: "flex:2; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Keep them"),
+          btn({ onClick: V.onRemoveAll, style: "flex:1; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#8c491a; color:#fff2eb; cursor:pointer" }, "Remove")
+        )
   );
 }
 
