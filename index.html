@@ -300,6 +300,7 @@ const App = {
     editId: null,
     editIsNew: false,
     editParent: null,
+    editParentOf: null,
     deleteId: null,
     draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "",
     draftPartners: [], draftCoParent: "", draftMore: false,
@@ -557,13 +558,21 @@ const App = {
 
   openNew(parentId) {
     this.pushUndo();
-    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, editParentOf: null, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
+  },
+  // Insert a new person ABOVE `id`: the new person takes `id`'s old parent
+  // (or becomes a root), and `id` becomes its child. Handles "I added myself
+  // first, now add my parent" and any missed parent on any node.
+  openParent(id) {
+    this.pushUndo();
+    const child = this.state.people.find(p => p.id === id);
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: id, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
   },
   openEdit(id) {
     const p = this.state.people.find(x => x.id === id);
     const partners = this.partnersOf(p).map(pp => ({ name: pp.name || "", born: pp.born || "", died: pp.died || "", place: pp.place || "" }));
     this.setState({
-      sheet: "edit", editId: id, editIsNew: false,
+      sheet: "edit", editId: id, editIsNew: false, editParentOf: null,
       draftName: p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
       draftNote: p.note || "", draftPartners: partners, draftCoParent: p.coParent || "",
       draftMore: !!(partners.length || p.born || p.died || p.place || p.note)
@@ -586,16 +595,24 @@ const App = {
       if (st.editIsNew) {
         const dup = st.people.find(p => p.name.toLowerCase() === name.toLowerCase());
         dupFound = dup || null;
-        const person = Object.assign({ id: "p" + Date.now(), parentId: st.editParent || null, addedBy: st.myName || "You" }, fields);
+        const newId = "p" + Date.now();
+        const person = Object.assign({ id: newId, parentId: st.editParent || null, addedBy: st.myName || "You" }, fields);
         if (dup) { person.flag = true; }
         people = st.people.map(p => (dup && p.id === dup.id) ? Object.assign({}, p, { flag: true }) : p).concat([person]);
-        toastText = dup ? name + " added — flagged next to " + dup.name + " for a chat" : name + " is on the tree";
+        // Inserting a parent: re-home the selected node (and its subtree) under the new person.
+        if (st.editParentOf) {
+          const childName = (st.people.find(p => p.id === st.editParentOf) || {}).name;
+          people = people.map(p => p.id === st.editParentOf ? Object.assign({}, p, { parentId: newId }) : p);
+          toastText = dup ? name + " added above " + (childName || "them") + " — flagged next to " + dup.name : name + " added as " + (childName || "their") + "'s parent";
+        } else {
+          toastText = dup ? name + " added — flagged next to " + dup.name + " for a chat" : name + " is on the tree";
+        }
       } else {
         people = st.people.map(p => p.id === st.editId ? Object.assign({}, p, fields) : p);
         toastText = "Saved " + name;
       }
       return {
-        people, sheet: null, selected: null,
+        people, sheet: null, selected: null, editParentOf: null,
         feed: [{ who: st.myName || "You", i: this.initials(st.myName || "You"), c: "#201e1d", text: (st.editIsNew ? "added " : "edited ") + name, t: this.clock() }].concat(st.feed),
         log: this.logEntry(st, st.editIsNew ? "added" : "edited", name, st.editIsNew ? "add" : "edit",
           st.editIsNew ? (dupFound ? "flagged as a possible duplicate" : null) : "details changed"),
@@ -673,6 +690,7 @@ const App = {
             onAdd: () => this.openNew(p.id),
             onEdit: () => this.openEdit(p.id),
             onSibling: () => this.openNew(p.parentId),
+          onAddParent: () => this.openParent(p.id),
             onDelete: () => this.setState({ sheet: "delete", deleteId: p.id })
           });
         }
@@ -1352,6 +1370,7 @@ function row(r) {
       card.push(h("div", { key: "acts", style: "display:flex; flex-wrap:wrap; gap:7px; padding:11px 12px; border-top:1.5px solid #dcd3c4; background:#f5ead8" },
         btn({ onClick: r.onEdit, style: actBtn, hover: "border-color:#c67139" }, "Edit person"),
         btn({ onClick: r.onAdd, style: actBtn, hover: "border-color:#c67139" }, "Add a child"),
+        btn({ onClick: r.onAddParent, style: actBtn, hover: "border-color:#c67139" }, "Add a parent"),
         btn({ onClick: r.onSibling, style: actBtn, hover: "border-color:#c67139" }, "Add a sibling"),
         btn({ onClick: r.onDelete, style: "font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove"),
         r.flagged ? btn({ onClick: r.onFlag, style: "font-size:12px; font-weight:800; padding:9px 14px; border-radius:999px; border:none; background:#8c491a; color:#fff2eb; cursor:pointer" }, "Open the chat") : null
