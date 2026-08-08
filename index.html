@@ -301,6 +301,8 @@ const App = {
     editIsNew: false,
     editParent: null,
     editParentOf: null,
+    addForId: null,
+    addKind: null,
     deleteId: null,
     draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "",
     draftPartners: [], draftCoParent: "", draftMore: false,
@@ -556,9 +558,9 @@ const App = {
 
   pushUndo() { this.setState(s => ({ undoStack: s.undoStack.slice(-9).concat([clone(s.people)]) })); },
 
-  openNew(parentId) {
+  openNew(parentId, kind) {
     this.pushUndo();
-    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, editParentOf: null, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, editParentOf: null, addKind: kind || null, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
   },
   // Insert a new person ABOVE `id`: the new person takes `id`'s old parent
   // (or becomes a root), and `id` becomes its child. Handles "I added myself
@@ -566,13 +568,15 @@ const App = {
   openParent(id) {
     this.pushUndo();
     const child = this.state.people.find(p => p.id === id);
-    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: id, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: id, addKind: "parent", draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
   },
+  // The + button on a card opens a small menu to add a child, parent, or sibling.
+  openAddMenu(id) { this.setState({ sheet: "add", addForId: id, selected: id }); },
   openEdit(id) {
     const p = this.state.people.find(x => x.id === id);
     const partners = this.partnersOf(p).map(pp => ({ name: pp.name || "", born: pp.born || "", died: pp.died || "", place: pp.place || "" }));
     this.setState({
-      sheet: "edit", editId: id, editIsNew: false, editParentOf: null,
+      sheet: "edit", editId: id, editIsNew: false, editParentOf: null, addKind: null,
       draftName: p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
       draftNote: p.note || "", draftPartners: partners, draftCoParent: p.coParent || "",
       draftMore: !!(partners.length || p.born || p.died || p.place || p.note)
@@ -709,6 +713,7 @@ const App = {
             onEdit: () => this.openEdit(p.id),
             onSibling: () => this.openNew(p.parentId),
           onAddParent: () => this.openParent(p.id),
+          onPlus: () => this.openAddMenu(p.id),
             onDelete: () => this.setState({ sheet: "delete", deleteId: p.id })
           });
         }
@@ -723,7 +728,7 @@ const App = {
               ribLeft: indentAt(depth) + 6, ribW: stub(depth + 1, depth), ribColor: cg.color,
               showRib: true, showSpine: false, dim: 1, color: cg.color,
               label: "+ Add another child of " + p.name.split(" ")[0],
-              onAdd: () => this.openNew(p.id)
+              onAdd: () => this.openNew(p.id, "child")
             });
           }
         }
@@ -766,6 +771,7 @@ const App = {
     const delBelow = s.deleteId ? this.below(s.deleteId) : 0;
     const delParent = delP && delP.parentId ? s.people.find(p => p.id === delP.parentId) : null;
     const delParentFirst = delParent ? delParent.name.split(" ")[0] : null;
+    const addForP = s.addForId ? s.people.find(p => p.id === s.addForId) : null;
     const showContrib = s.room === DEMO_ROOM ? contributors : contributors.slice(0, 1);
 
     return {
@@ -839,7 +845,7 @@ const App = {
       contributors: showContrib,
       feed: s.feed.slice(0, 6),
       sheetOpen: !!s.sheet,
-      onCloseSheet: () => this.setState({ sheet: null, deleteId: null }),
+      onCloseSheet: () => this.setState({ sheet: null, deleteId: null, addForId: null }),
       isLogSheet: s.sheet === "log",
       onOpenLog: () => this.setState({ sheet: "log" }),
       logCount: s.log.length,
@@ -934,7 +940,7 @@ const App = {
           toast: { text: "Your link is live — sent to " + st.payEmail, i: "✓", c: "#7a8a5e" }
         }), () => this.flashToast());
       },
-      editTitle: s.editIsNew ? "Add a person" : "Edit person",
+      editTitle: s.editIsNew ? (s.addKind === "child" ? "Add a child" : s.addKind === "parent" ? "Add a parent" : s.addKind === "sibling" ? "Add a sibling" : "Add a person") : "Edit person",
       editSub: s.editIsNew ? "A name is all we need. Details any time later." : "Everyone on the board sees the change.",
       draftName: s.draftName, draftBorn: s.draftBorn, draftDied: s.draftDied,
       draftPlace: s.draftPlace, draftNote: s.draftNote, draftMore: s.draftMore,
@@ -972,6 +978,12 @@ const App = {
       ) : "",
       onRemoveOne: () => this.removePerson("one"),
       onRemoveAll: () => this.removePerson("subtree"),
+      isAddSheet: s.sheet === "add",
+      addForName: addForP ? addForP.name : "",
+      addForFirst: addForP ? addForP.name.split(" ")[0] : "",
+      onAddChildHere: () => this.openNew(s.addForId, "child"),
+      onAddParentHere: () => this.openParent(s.addForId),
+      onAddSiblingHere: () => this.openNew(addForP ? addForP.parentId : null, "sibling"),
       invite: "Help us build the " + s.familyName + " tree at the reunion.\n\n1. Open the link\n2. Tap “I have a code already”\n3. Type in the board code: " + s.room + "\n\nThen add the relatives you know best. Takes about two minutes.",
       onCopyInvite: () => { this.copy(this.renderVals().invite); this.setState({ sheet: null, toast: { text: "Message copied — paste it in the group text", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
       onTextIt: () => {
@@ -1393,15 +1405,12 @@ function row(r) {
           r.flagged ? h("span", { style: "align-self:flex-start; font-size:10px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:3px 9px; border-radius:999px" }, "two entries — tap, then open the chat") : null
         )
       ),
-      btn({ onClick: r.onAdd, style: "flex:none; width:50px; border:none; background:" + r.color + "; color:#fff2eb; font-size:24px; font-weight:700; cursor:pointer" }, "+")
+      btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:" + r.color + "; color:#fff2eb; font-size:24px; font-weight:700; cursor:pointer" }, "+")
     );
     const card = [head];
     if (r.selected) {
       card.push(h("div", { key: "acts", style: "display:flex; flex-wrap:wrap; gap:7px; padding:11px 12px; border-top:1.5px solid #dcd3c4; background:#f5ead8" },
-        btn({ onClick: r.onEdit, style: actBtn, hover: "border-color:#c67139" }, "Edit person"),
-        btn({ onClick: r.onAdd, style: actBtn, hover: "border-color:#c67139" }, "Add a child"),
-        btn({ onClick: r.onAddParent, style: actBtn, hover: "border-color:#c67139" }, "Add a parent"),
-        btn({ onClick: r.onSibling, style: actBtn, hover: "border-color:#c67139" }, "Add a sibling"),
+        btn({ onClick: r.onEdit, style: actBtn, hover: "border-color:#c67139" }, "Edit person and/or spouse/partner"),
         btn({ onClick: r.onDelete, style: "font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove"),
         r.flagged ? btn({ onClick: r.onFlag, style: "font-size:12px; font-weight:800; padding:9px 14px; border-radius:999px; border:none; background:#8c491a; color:#fff2eb; cursor:pointer" }, "Open the chat") : null
       ));
@@ -1506,6 +1515,7 @@ const fieldStyle = "font-size:15px; padding:14px 18px; border-radius:999px; bord
 function sheets(V) {
   let n = null;
   if (V.isEditSheet) n = editSheet(V);
+  else if (V.isAddSheet) n = addSheet(V);
   else if (V.isDeleteSheet) n = deleteSheet(V);
   else if (V.isFlagSheet) n = flagSheet(V);
   else if (V.isBoardSheet) n = boardSheet(V);
@@ -1572,6 +1582,32 @@ function editSheet(V) {
       btn({ onClick: V.onCancelEdit, style: "flex:1; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Cancel"),
       btn({ onClick: V.onSaveEdit, style: "flex:2; font-size:16px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveLabel)
     )
+  );
+}
+
+function addSheet(V) {
+  const choice = "text-align:left; display:flex; flex-direction:column; gap:3px; padding:15px 18px; border-radius:22px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
+  return h("div", { key: "sheet-add", style: SHEET + "; gap:14px" },
+    GRAB,
+    h("div", { style: "display:flex; flex-direction:column; gap:4px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px" }, "Add to the family"),
+      h("div", { style: "font-size:13px; color:#645c50" }, "Add someone connected to " + V.addForName + ".")
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:10px" },
+      btn({ onClick: V.onAddChildHere, style: choice, hover: "border-color:#c67139" },
+        h("span", { style: "font-size:16px; font-weight:800" }, "Add a child"),
+        h("span", { style: "font-size:12px; color:#645c50" }, "A son or daughter of " + V.addForFirst)
+      ),
+      btn({ onClick: V.onAddParentHere, style: choice, hover: "border-color:#c67139" },
+        h("span", { style: "font-size:16px; font-weight:800" }, "Add a parent"),
+        h("span", { style: "font-size:12px; color:#645c50" }, "A mother or father of " + V.addForFirst + " — moves them down a generation")
+      ),
+      btn({ onClick: V.onAddSiblingHere, style: choice, hover: "border-color:#c67139" },
+        h("span", { style: "font-size:16px; font-weight:800" }, "Add a sibling"),
+        h("span", { style: "font-size:12px; color:#645c50" }, "A brother or sister of " + V.addForFirst)
+      )
+    ),
+    btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Cancel")
   );
 }
 
