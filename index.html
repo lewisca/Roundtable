@@ -303,6 +303,8 @@ const App = {
     editParentOf: null,
     addForId: null,
     addKind: null,
+    parentPickFor: null,
+    parentPickSel: {},
     deleteId: null,
     draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "",
     draftPartners: [], draftCoParent: "", draftMore: false,
@@ -568,10 +570,23 @@ const App = {
   openParent(id) {
     this.pushUndo();
     const child = this.state.people.find(p => p.id === id);
-    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: id, addKind: "parent", draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: [id], addKind: "parent", draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
   },
   // The + button on a card opens a small menu to add a child, parent, or sibling.
   openAddMenu(id) { this.setState({ sheet: "add", addForId: id, selected: id }); },
+  // Adding a parent when the person has siblings: choose who the parent belongs to.
+  openParentPick(id) { this.setState({ sheet: "parentpick", parentPickFor: id, parentPickSel: { [id]: true } }); },
+  confirmParentPick() {
+    const s = this.state;
+    const ids = Object.keys(s.parentPickSel).filter(k => s.parentPickSel[k]);
+    if (!ids.length) return;
+    const anchor = s.people.find(p => p.id === s.parentPickFor);
+    this.setState({
+      sheet: "edit", editId: null, editIsNew: true,
+      editParent: (anchor ? (anchor.parentId || null) : null), editParentOf: ids, addKind: "parent",
+      draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false
+    });
+  },
   openEdit(id) {
     const p = this.state.people.find(x => x.id === id);
     const partners = this.partnersOf(p).map(pp => ({ name: pp.name || "", born: pp.born || "", died: pp.died || "", place: pp.place || "" }));
@@ -603,11 +618,13 @@ const App = {
         const person = Object.assign({ id: newId, parentId: st.editParent || null, addedBy: st.myName || "You" }, fields);
         if (dup) { person.flag = true; }
         people = st.people.map(p => (dup && p.id === dup.id) ? Object.assign({}, p, { flag: true }) : p).concat([person]);
-        // Inserting a parent: re-home the selected node (and its subtree) under the new person.
-        if (st.editParentOf) {
-          const childName = (st.people.find(p => p.id === st.editParentOf) || {}).name;
-          people = people.map(p => p.id === st.editParentOf ? Object.assign({}, p, { parentId: newId }) : p);
-          toastText = dup ? name + " added above " + (childName || "them") + " — flagged next to " + dup.name : name + " added as " + (childName || "their") + "'s parent";
+        // Inserting a parent: re-home the selected node(s) — and their subtrees — under the new person.
+        const kidIds = Array.isArray(st.editParentOf) ? st.editParentOf : (st.editParentOf ? [st.editParentOf] : []);
+        if (kidIds.length) {
+          people = people.map(p => kidIds.indexOf(p.id) > -1 ? Object.assign({}, p, { parentId: newId }) : p);
+          const first = (st.people.find(p => p.id === kidIds[0]) || {}).name;
+          const who = kidIds.length === 1 ? ((first || "them").split(" ")[0]) : (kidIds.length + " people");
+          toastText = dup ? name + " added above " + who + " — flagged next to " + dup.name : name + " added as " + who + (kidIds.length === 1 ? "'s parent" : "' parent");
         } else {
           toastText = dup ? name + " added — flagged next to " + dup.name + " for a chat" : name + " is on the tree";
         }
@@ -772,6 +789,19 @@ const App = {
     const delParent = delP && delP.parentId ? s.people.find(p => p.id === delP.parentId) : null;
     const delParentFirst = delParent ? delParent.name.split(" ")[0] : null;
     const addForP = s.addForId ? s.people.find(p => p.id === s.addForId) : null;
+    const ppAnchor = s.parentPickFor ? s.people.find(p => p.id === s.parentPickFor) : null;
+    let parentPickList = [], parentPickAllOn = false, parentPickCount = 0;
+    if (ppAnchor) {
+      const pid = ppAnchor.parentId || null;
+      const sibs = s.people.filter(x => (x.parentId || null) === pid && x.id !== ppAnchor.id);
+      parentPickAllOn = sibs.length > 0 && sibs.every(x => s.parentPickSel[x.id]);
+      parentPickList = [{ id: ppAnchor.id, name: ppAnchor.name, years: this.years(ppAnchor), isAnchor: true, checked: true }]
+        .concat(sibs.map(x => ({
+          id: x.id, name: x.name, years: this.years(x), isAnchor: false, checked: !!s.parentPickSel[x.id],
+          onToggle: () => this.setState(st => ({ parentPickSel: Object.assign({}, st.parentPickSel, { [x.id]: !st.parentPickSel[x.id] }) }))
+        })));
+      parentPickCount = parentPickList.filter(r => r.checked).length;
+    }
     const showContrib = s.room === DEMO_ROOM ? contributors : contributors.slice(0, 1);
 
     return {
@@ -845,7 +875,7 @@ const App = {
       contributors: showContrib,
       feed: s.feed.slice(0, 6),
       sheetOpen: !!s.sheet,
-      onCloseSheet: () => this.setState({ sheet: null, deleteId: null, addForId: null }),
+      onCloseSheet: () => this.setState({ sheet: null, deleteId: null, addForId: null, parentPickFor: null }),
       isLogSheet: s.sheet === "log",
       onOpenLog: () => this.setState({ sheet: "log" }),
       logCount: s.log.length,
@@ -982,8 +1012,27 @@ const App = {
       addForName: addForP ? addForP.name : "",
       addForFirst: addForP ? addForP.name.split(" ")[0] : "",
       onAddChildHere: () => this.openNew(s.addForId, "child"),
-      onAddParentHere: () => this.openParent(s.addForId),
+      onAddParentHere: () => {
+        const pid = addForP ? (addForP.parentId || null) : null;
+        const hasSibs = addForP && s.people.some(x => (x.parentId || null) === pid && x.id !== addForP.id);
+        if (hasSibs) this.openParentPick(s.addForId); else this.openParent(s.addForId);
+      },
       onAddSiblingHere: () => this.openNew(addForP ? addForP.parentId : null, "sibling"),
+      isParentPickSheet: s.sheet === "parentpick",
+      parentPickList: parentPickList,
+      parentPickAllOn: parentPickAllOn,
+      parentPickCount: parentPickCount,
+      onPickToggleAll: () => this.setState(st => {
+        const anchor = st.parentPickFor;
+        const a = st.people.find(x => x.id === anchor);
+        const pid = a ? (a.parentId || null) : null;
+        const sibs = st.people.filter(x => (x.parentId || null) === pid && x.id !== anchor);
+        const allOn = sibs.length > 0 && sibs.every(x => st.parentPickSel[x.id]);
+        const sel = { [anchor]: true };
+        if (!allOn) sibs.forEach(x => { sel[x.id] = true; });
+        return { parentPickSel: sel };
+      }),
+      onConfirmParentPick: () => this.confirmParentPick(),
       invite: "Help us build the " + s.familyName + " tree at the reunion.\n\n1. Open the link\n2. Tap “I have a code already”\n3. Type in the board code: " + s.room + "\n\nThen add the relatives you know best. Takes about two minutes.",
       onCopyInvite: () => { this.copy(this.renderVals().invite); this.setState({ sheet: null, toast: { text: "Message copied — paste it in the group text", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
       onTextIt: () => {
@@ -1516,6 +1565,7 @@ function sheets(V) {
   let n = null;
   if (V.isEditSheet) n = editSheet(V);
   else if (V.isAddSheet) n = addSheet(V);
+  else if (V.isParentPickSheet) n = parentPickSheet(V);
   else if (V.isDeleteSheet) n = deleteSheet(V);
   else if (V.isFlagSheet) n = flagSheet(V);
   else if (V.isBoardSheet) n = boardSheet(V);
@@ -1608,6 +1658,45 @@ function addSheet(V) {
       )
     ),
     btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Cancel")
+  );
+}
+
+function checkboxMark(on) {
+  return h("span", { style: "width:22px; height:22px; flex:none; border-radius:7px; border:2px solid " + (on ? "#c67139" : "#c0b6a5") + "; background:" + (on ? "#c67139" : "transparent") + "; color:#fff2eb; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, on ? "✓" : "");
+}
+
+function parentPickSheet(V) {
+  return h("div", { key: "sheet-pp", style: SHEET + "; max-height:82%; gap:13px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; flex-direction:column; gap:5px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px; line-height:1.1" }, "Who is this a parent of?"),
+      h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "Pick everyone this new parent belongs to — their branches join under the new parent.")
+    ),
+    h("div", { style: "display:flex; justify-content:flex-end" },
+      btn({ onClick: V.onPickToggleAll, style: "font-size:12px; font-weight:700; padding:8px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139" }, V.parentPickAllOn ? "Clear" : "Select all")
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+      V.parentPickList.map((r, i) => r.isAnchor
+        ? h("div", { key: "pp" + i, style: "display:flex; align-items:center; gap:12px; padding:13px 16px; border-radius:18px; border:1.5px solid #c67139; background:#fff2eb" },
+            checkboxMark(true),
+            h("div", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:1px" },
+              h("div", { style: "font-size:15px; font-weight:800" }, r.name),
+              h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#82796a" }, "the person you tapped")
+            )
+          )
+        : btn({ key: "pp" + i, onClick: r.onToggle, style: "display:flex; align-items:center; gap:12px; padding:13px 16px; border-radius:18px; text-align:left; cursor:pointer; border:1.5px solid " + (r.checked ? "#c67139" : "#dcd3c4") + "; background:" + (r.checked ? "#fff2eb" : "#f9f4ed") },
+            checkboxMark(r.checked),
+            h("span", { style: "flex:1; min-width:0; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap" },
+              h("span", { style: "font-size:15px; font-weight:700" }, r.name),
+              r.years ? h("span", { style: "font-size:12px; color:#82796a" }, r.years) : null
+            )
+          )
+      )
+    ),
+    h("div", { style: "display:flex; gap:10px" },
+      btn({ onClick: V.onCloseSheet, style: "flex:1; font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Cancel"),
+      btn({ onClick: V.onConfirmParentPick, style: "flex:2; font-size:16px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Continue" + (V.parentPickCount > 1 ? " · " + V.parentPickCount : ""))
+    )
   );
 }
 
