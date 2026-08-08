@@ -292,6 +292,7 @@ const App = {
     zoom: 1,
     projection: false,
     wide: false,
+    hereCount: 1,
     query: "",
     genView: "all",
     collapsed: {},
@@ -328,6 +329,7 @@ const App = {
   _liveTimer: null,
   _saveTimer: null,
   _chan: null,
+  _clientId: null,
   _remoteReady: false,
   _lastWriteJSON: null,
   _deepLinkCode: null,
@@ -410,7 +412,10 @@ const App = {
   subscribeRoom(room) {
     if (!sb) return;
     this.unsubscribeRoom();
-    this._chan = sb.channel("board:" + room)
+    if (!this._clientId) this._clientId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : "c" + Math.random().toString(36).slice(2) + Date.now();
+    this.state.hereCount = 1;
+    const self = this;
+    this._chan = sb.channel("board:" + room, { config: { presence: { key: this._clientId } } })
       .on("postgres_changes", { event: "*", schema: "public", table: "boards", filter: "code=eq." + room }, payload => {
         if (this.state.room !== room || this.state.step !== "app") return;
         const row = payload.new;
@@ -430,7 +435,21 @@ const App = {
         if (this.applyBilling(row)) changed = true;
         if (changed) this.render();
       })
-      .subscribe();
+      // Live presence: count everyone currently connected to this board.
+      .on("presence", { event: "sync" }, () => {
+        try {
+          const n = Object.keys(self._chan.presenceState()).length || 1;
+          if (self.state.hereCount !== n) {
+            self.state.hereCount = n;
+            if (self.state.step === "app" && self.state.room === room) self.render();
+          }
+        } catch (e) {}
+      })
+      .subscribe(status => {
+        if (status === "SUBSCRIBED") {
+          try { self._chan.track({ name: self.state.myName || "Someone", cid: self._clientId }); } catch (e) {}
+        }
+      });
   },
   // Reflect the server-owned billing/lifecycle columns into UI state. Returns
   // true if anything changed. Tolerant of the columns not existing yet (undefined).
@@ -847,7 +866,7 @@ const App = {
       peopleCount: total,
       genFilters: genFilters,
       gensCount: gens,
-      hereLabel: (s.room === DEMO_ROOM ? "5 here" : "1 here"),
+      hereLabel: (s.room === DEMO_ROOM ? "5 here" : (s.hereCount + " here")),
       wide: s.wide,
       isProjection: s.projection,
       onOpenProjection: () => this.setState({ projection: true, sheet: null, selected: null }),
