@@ -377,11 +377,13 @@ const App = {
   radialData() {
     const people = this.state.people;
     const kidsOf = pid => people.filter(p => (p.parentId || null) === (pid || null));
-    const mk = p => ({ id: p.id, name: p.name, short: (p.name || "?").trim().split(/\s+/)[0], c: kidsOf(p.id).map(mk) });
+    // `gen` is the person's ABSOLUTE generation (0-based), so colours stay tied
+    // to real generations even when zoomed into a branch.
+    const mk = (p, g) => ({ id: p.id, name: p.name, short: (p.name || "?").trim().split(/\s+/)[0], gen: g, c: kidsOf(p.id).map(k => mk(k, g + 1)) });
     const fp = this.state.radialFocus ? people.find(p => p.id === this.state.radialFocus) : null;
-    if (fp) return { id: fp.id, name: fp.name, short: (fp.name || "?").trim().split(/\s+/)[0], focused: true, c: kidsOf(fp.id).map(mk) };
+    if (fp) { const base = this.depthOf(fp); return { id: fp.id, name: fp.name, short: (fp.name || "?").trim().split(/\s+/)[0], gen: base, focused: true, c: kidsOf(fp.id).map(k => mk(k, base + 1)) }; }
     const fam = this.state.familyName || "Family";
-    return { id: "__center", name: fam, short: (fam.split(/\s+/)[0] || "Family"), c: kidsOf(null).map(mk) };
+    return { id: "__center", name: fam, short: (fam.split(/\s+/)[0] || "Family"), gen: -1, c: kidsOf(null).map(k => mk(k, 0)) };
   },
   radialLayout(root) {
     const weigh = n => { n.w = n.c.length ? n.c.reduce((s, k) => s + weigh(k), 0) : 1; return n.w; };
@@ -418,7 +420,7 @@ const App = {
     let s = '<svg viewBox="0 0 ' + SIZE + " " + SIZE + '" style="width:100%;height:auto;display:block">';
     for (let i = 0; i < maxD; i++) s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + rOut(i + 1) + '" fill="none" stroke="#dcd3c4" stroke-width="1"/>';
     nodes.filter(n => n.depth > 0).forEach(n => {
-      const c = this.gen(n.depth - 1).color;
+      const c = this.gen(Math.max(0, n.node.gen)).color;   // colour by ABSOLUTE generation
       const dim = dimActive && !lineage[n.node.id];
       const isSel = selRec && selRec.node.id === n.node.id;
       const r0 = rIn(n.depth), r1 = rOut(n.depth), pad = 0.008;
@@ -431,10 +433,12 @@ const App = {
       if (rn > 90 && rn < 270) rot += 180;
       s += '<g data-node="' + esc(n.node.id) + '" style="cursor:pointer">';
       s += '<path d="' + arc(r0 + 3, r1 - 3, n.a0 + pad, n.a1 - pad) + '" fill="' + c + '" fill-opacity="' + (dim ? 0.16 : isSel ? 1 : 0.82) + '" stroke="#f5ead8" stroke-width="2.5"/>';
-      if (arcW > 26) {
-        const fs = Math.min(15, Math.max(10, (r1 - r0) / 2.4));
+      {
+        // Always show at least the first letter; fit more when the arc allows.
+        const fs = Math.min(15, Math.max(9, (r1 - r0) / 2.4));
         const maxChars = Math.max(1, Math.floor(arcW / (fs * 0.62)));
-        const label = n.node.short.length > maxChars ? n.node.short.slice(0, Math.max(1, maxChars - 1)) + "…" : n.node.short;
+        const label = maxChars <= 1 ? n.node.short.slice(0, 1)
+          : (n.node.short.length > maxChars ? n.node.short.slice(0, maxChars - 1) + "…" : n.node.short);
         s += '<text x="' + lx + '" y="' + ly + '" transform="rotate(' + rot + ", " + lx + ", " + ly + ')" text-anchor="middle" dominant-baseline="middle" fill="' + (dim ? "#00000033" : "#fff") + '" style="font-size:' + fs + 'px;font-weight:700;pointer-events:none">' + esc(label) + "</text>";
       }
       s += "</g>";
