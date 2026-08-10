@@ -716,6 +716,8 @@ const App = {
     const matches = p => !q || [p.name, p.place, p.note, this.partnersOf(p).map(pp => pp.name).join(" "), p.coParent, p.born, p.addedBy].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
     const walk = (parentId, depth) => {
       const list = this.kidsOf(parentId);
+      const parentP = parentId ? s.people.find(x => x.id === parentId) : null;
+      const parentName = parentP ? parentP.name : null;
       list.forEach((p, i) => {
         const g = this.gen(depth);
         const collapsed = !expandAll && !!s.collapsed[p.id] && !q;
@@ -729,6 +731,7 @@ const App = {
             initials: this.initials(p.name), detail: detail,
             partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
             coParent: p.coParent || null,
+            childOf: (flat && parentName) ? parentName : null,   // shown only in the generation view
             color: g.color, soft: g.soft, depth: depth, pad: flat ? 0 : indentAt(depth),
             ribLeft: flat ? 0 : (depth ? indentAt(depth - 1) + 6 : 0), ribW: flat ? 0 : (depth ? stub(depth, depth - 1) : Math.round(ind * 0.55)),
             ribColor: this.gen(Math.max(0, depth - 1)).color,
@@ -1442,6 +1445,9 @@ function row(r) {
             h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; color:#201e1d; overflow-wrap:anywhere; min-width:0" }, r.name),
             h("span", { style: "font-size:12px; color:#82796a" }, r.years)
           ),
+          r.childOf ? h("span", { style: "align-self:flex-start; display:flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; background:" + r.soft + "; font-size:11px; font-weight:700; color:" + r.color },
+            h("span", { style: "font-size:10px" }, "↑"), h("span", null, "child of " + r.childOf)
+          ) : null,
           r.partners.map((pt, i) => h("span", { key: "pp" + i, style: "align-self:flex-start; display:flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; background:" + r.soft },
             h("span", { style: "font-size:11px; color:" + r.color }, "♥"),
             h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, pt.name),
