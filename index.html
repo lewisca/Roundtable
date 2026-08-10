@@ -298,6 +298,9 @@ const App = {
     genView: "all",
     collapsed: {},
     selected: null,
+    links: [],
+    connectFor: null,
+    connectType: "spouse",
     sheet: null,
     editId: null,
     editIsNew: false,
@@ -383,7 +386,7 @@ const App = {
     const s = this.state;
     return {
       familyName: s.familyName, people: s.people, feed: s.feed, log: s.log,
-      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed
+      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed, links: s.links
     };
   },
   async syncRoom(room, isNew) {
@@ -484,14 +487,14 @@ const App = {
         room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", toast: null,
         familyName: data.familyName || "", people: data.people || [], feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
-        collapsed: data.collapsed || {}, subscribed: !!data.subscribed
+        collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
       });
     } else {
       // brand-new empty board
       const started = { who: this.state.myName || "You", i: this.initials(this.state.myName || "You"), c: "#201e1d", verb: "started", target: "board " + room, kind: "board", when: this.stamp() };
       Object.assign(this.state, {
         room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", toast: null,
-        familyName: "", people: [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, subscribed: false
+        familyName: "", people: [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, links: [], connectFor: null, subscribed: false
       });
     }
     this.startLive();
@@ -678,6 +681,7 @@ const App = {
         people: this.resolveFlags(s.people
           .filter(p => p.id !== id)
           .map(p => p.parentId === id ? Object.assign({}, p, { parentId: newParent }) : p)),
+        links: (s.links || []).filter(l => l.a !== id && l.b !== id),
         sheet: null, deleteId: null, selected: null,
         log: this.logEntry(s, "removed", gone.name, "remove",
           kids ? "kept the " + kids + " " + (kids === 1 ? "child" : "children") + " below, moved up a generation" : null),
@@ -688,6 +692,7 @@ const App = {
       const extra = ids.length - 1;
       this.setState(s => ({
         people: this.resolveFlags(s.people.filter(p => ids.indexOf(p.id) === -1)),
+        links: (s.links || []).filter(l => ids.indexOf(l.a) === -1 && ids.indexOf(l.b) === -1),
         sheet: null, deleteId: null, selected: null,
         log: this.logEntry(s, "removed", gone.name, "remove",
           extra ? "and the " + extra + " " + (extra === 1 ? "person" : "people") + " below them" : null),
@@ -706,6 +711,41 @@ const App = {
     return people.filter(p => p.flag).length < 2
       ? people.map(p => p.flag ? Object.assign({}, p, { flag: false }) : p)
       : people;
+  },
+  // Relationship links between two top-level people (spouse / sibling).
+  linksOf(id) {
+    return (this.state.links || []).filter(l => l.a === id || l.b === id).map(l => {
+      const otherId = l.a === id ? l.b : l.a;
+      const other = this.state.people.find(p => p.id === otherId);
+      return other ? { otherId: otherId, otherName: other.name, type: l.type } : null;
+    }).filter(Boolean);
+  },
+  openConnect(id) { this.setState({ sheet: "connect", connectFor: id, connectType: "spouse" }); },
+  addLink(a, b, type) {
+    if (!a || !b || a === b) return;
+    this.pushUndo();
+    this.setState(st => {
+      const dup = (st.links || []).some(l => l.type === type && ((l.a === a && l.b === b) || (l.a === b && l.b === a)));
+      const links = dup ? st.links : (st.links || []).concat([{ a: a, b: b, type: type }]);
+      const nameA = (st.people.find(p => p.id === a) || {}).name || "someone";
+      const nameB = (st.people.find(p => p.id === b) || {}).name || "someone";
+      const verb = type === "spouse" ? "married to" : "a sibling of";
+      return {
+        links: links, sheet: null, selected: null, connectFor: null,
+        log: this.logEntry(st, "connected", nameA + " · " + verb + " · " + nameB, "edit", "linked at the top of the tree"),
+        toast: { text: nameA + " — " + verb + " " + nameB, i: "⚭", c: this.accent() }
+      };
+    }, () => this.flashToast());
+  },
+  unlink(a, b, type) {
+    this.pushUndo();
+    this.setState(st => ({
+      links: (st.links || []).filter(l => !(l.type === type && ((l.a === a && l.b === b) || (l.a === b && l.b === a))))
+    }));
+  },
+  pruneLinks(people) {
+    const ids = {}; people.forEach(p => { ids[p.id] = true; });
+    return (this.state.links || []).filter(l => ids[l.a] && ids[l.b]);
   },
 
   flatten(forBig, expandAll) {
@@ -739,6 +779,14 @@ const App = {
             partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
             coParent: p.coParent || null,
             childOf: (flat && parentName) ? parentName : null,   // shown only in the generation view
+            links: this.linksOf(p.id).map(l => Object.assign({}, l, {
+              onJump: () => {
+                this.setState({ selected: l.otherId });
+                const el = document.getElementById("node-" + l.otherId);
+                if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+              },
+              onUnlink: () => this.unlink(p.id, l.otherId, l.type)
+            })),
             color: g.color, soft: g.soft, depth: depth, pad: flat ? 0 : indentAt(depth),
             ribLeft: flat ? 0 : (depth ? indentAt(depth - 1) + 6 : 0), ribW: flat ? 0 : (depth ? stub(depth, depth - 1) : Math.round(ind * 0.55)),
             ribColor: this.gen(Math.max(0, depth - 1)).color,
@@ -818,6 +866,15 @@ const App = {
     const delParent = delP && delP.parentId ? s.people.find(p => p.id === delP.parentId) : null;
     const delParentFirst = delParent ? delParent.name.split(" ")[0] : null;
     const addForP = s.addForId ? s.people.find(p => p.id === s.addForId) : null;
+    const connectP = s.connectFor ? s.people.find(p => p.id === s.connectFor) : null;
+    const connectOthers = connectP ? s.people.filter(p => !p.parentId && p.id !== connectP.id).map(p => ({
+      id: p.id, name: p.name, years: this.years(p),
+      onConnect: () => this.addLink(connectP.id, p.id, this.state.connectType)
+    })) : [];
+    const connectExisting = connectP ? this.linksOf(connectP.id).map(l => ({
+      otherName: l.otherName, type: l.type,
+      onUnlink: () => this.unlink(connectP.id, l.otherId, l.type)
+    })) : [];
     const ppAnchor = s.parentPickFor ? s.people.find(p => p.id === s.parentPickFor) : null;
     let parentPickList = [], parentPickAllOn = false, parentPickCount = 0;
     if (ppAnchor) {
@@ -908,7 +965,7 @@ const App = {
       contributors: showContrib,
       feed: s.feed.slice(0, 6),
       sheetOpen: !!s.sheet,
-      onCloseSheet: () => this.setState({ sheet: null, deleteId: null, addForId: null, parentPickFor: null }),
+      onCloseSheet: () => this.setState({ sheet: null, deleteId: null, addForId: null, parentPickFor: null, connectFor: null }),
       isLogSheet: s.sheet === "log",
       onOpenLog: () => this.setState({ sheet: "log" }),
       logCount: s.log.length,
@@ -1036,6 +1093,7 @@ const App = {
       isAddSheet: s.sheet === "add",
       addForName: addForP ? addForP.name : "",
       addForFirst: addForP ? addForP.name.split(" ")[0] : "",
+      addForIsRoot: !!(addForP && !addForP.parentId),   // "connect" only makes sense for top people
       onAddChildHere: () => this.openNew(s.addForId, "child"),
       onAddParentHere: () => {
         const pid = addForP ? (addForP.parentId || null) : null;
@@ -1043,6 +1101,13 @@ const App = {
         if (hasSibs) this.openParentPick(s.addForId); else this.openParent(s.addForId);
       },
       onAddSiblingHere: () => this.openNew(addForP ? addForP.parentId : null, "sibling"),
+      onConnectHere: () => this.openConnect(s.addForId),
+      isConnectSheet: s.sheet === "connect",
+      connectForName: connectP ? connectP.name : "",
+      connectType: s.connectType,
+      onPickConnectType: (t) => () => this.setState({ connectType: t }),
+      connectOthers: connectOthers,
+      connectExisting: connectExisting,
       isParentPickSheet: s.sheet === "parentpick",
       parentPickList: parentPickList,
       parentPickAllOn: parentPickAllOn,
@@ -1455,6 +1520,17 @@ function row(r) {
             pt.years ? h("span", { style: "font-size:11px; color:#82796a" }, pt.years) : null
           )),
           r.coParent ? h("span", { style: "align-self:flex-start; font-size:11px; font-style:italic; color:#82796a" }, "· with " + r.coParent) : null,
+          (r.links || []).map((lk, i) => {
+            const spouse = lk.type === "spouse";
+            const bg = spouse ? "#ffe1d0" : "#e1eecc", fg = spouse ? "#8c491a" : "#56633f";
+            return h("span", { key: "lk" + i, style: "align-self:flex-start; display:flex; align-items:center; gap:2px; padding:3px 6px 3px 11px; border-radius:999px; background:" + bg + "; color:" + fg + "; font-size:12px; font-weight:700" },
+              h("span", { onClick: e => { if (e && e.stopPropagation) e.stopPropagation(); lk.onJump(); }, title: "Go to " + lk.otherName, style: "display:flex; align-items:center; gap:6px; cursor:pointer" },
+                h("span", { style: "font-size:12px" }, spouse ? "⚭" : "⇄"),
+                h("span", null, (spouse ? "Married to " : "Sibling of ") + lk.otherName)
+              ),
+              h("span", { onClick: e => { if (e && e.stopPropagation) e.stopPropagation(); lk.onUnlink(); }, title: "Remove this connection", "aria-label": "Remove connection", style: "cursor:pointer; font-size:15px; font-weight:800; line-height:1; padding:0 4px; opacity:.6" }, "×")
+            );
+          }),
           r.detail ? h("span", { style: "font-size:12px; line-height:1.4; color:#645c50" }, r.detail) : null,
           h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + r.byColor }, r.byLine),
           r.flagged ? h("span", { style: "align-self:flex-start; font-size:10px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:3px 9px; border-radius:999px" }, "two entries — tap, then open the chat") : null
@@ -1474,7 +1550,7 @@ function row(r) {
   } else if (r.isAdd) {
     inner.push(btn({ key: "add", onClick: r.onAdd, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:14px 18px; border-radius:24px; border:2px dashed " + r.color + "; background:#f9f4ed; color:" + r.color + "; cursor:pointer" }, r.label));
   }
-  return h("div", { key: r.id, style: "position:relative; padding-left:" + r.pad + "px; padding-top:12px; opacity:" + r.dim }, inner);
+  return h("div", { key: r.id, id: r.isCard ? ("node-" + r.id) : null, style: "position:relative; padding-left:" + r.pad + "px; padding-top:12px; opacity:" + r.dim }, inner);
 }
 const actBtn = "font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
 
@@ -1571,6 +1647,7 @@ function sheets(V) {
   let n = null;
   if (V.isEditSheet) n = editSheet(V);
   else if (V.isAddSheet) n = addSheet(V);
+  else if (V.isConnectSheet) n = connectSheet(V);
   else if (V.isMenuSheet) n = menuSheet(V);
   else if (V.isShareMenuSheet) n = shareMenuSheet(V);
   else if (V.isParentPickSheet) n = parentPickSheet(V);
@@ -1663,9 +1740,45 @@ function addSheet(V) {
       btn({ onClick: V.onAddSiblingHere, style: choice, hover: "border-color:#c67139" },
         h("span", { style: "font-size:16px; font-weight:800" }, "Add a sibling"),
         h("span", { style: "font-size:12px; color:#645c50" }, "A brother or sister of " + V.addForFirst)
-      )
+      ),
+      V.addForIsRoot ? btn({ onClick: V.onConnectHere, style: choice, hover: "border-color:#c67139" },
+        h("span", { style: "font-size:16px; font-weight:800" }, "Connect to another top person"),
+        h("span", { style: "font-size:12px; color:#645c50" }, "Married with no kids together, or siblings whose parent isn't on the tree")
+      ) : null
     ),
     btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Cancel")
+  );
+}
+
+function connectSheet(V) {
+  const seg = (active) => "flex:1; font-size:13px; font-weight:800; padding:11px; border-radius:14px; cursor:pointer; border:1.5px solid " + (active ? "#c67139" : "#dcd3c4") + "; background:" + (active ? "#c67139" : "#f9f4ed") + "; color:" + (active ? "#fff2eb" : "#645c50");
+  return h("div", { key: "sheet-connect", style: SHEET + "; max-height:84%; gap:13px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; flex-direction:column; gap:4px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px; line-height:1.1" }, "Connect " + V.connectForName),
+      h("div", { style: "font-size:13px; color:#645c50" }, "Link them to another top-level person — they each keep their own branch.")
+    ),
+    V.connectExisting.length ? h("div", { style: "display:flex; flex-direction:column; gap:7px" },
+      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Already connected"),
+      V.connectExisting.map((l, i) => h("div", { key: "ce" + i, style: "display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-radius:16px; background:#f5ead8" },
+        h("span", { style: "font-size:13px; font-weight:700" }, (l.type === "spouse" ? "⚭ Married to " : "⇄ Sibling of ") + l.otherName),
+        btn({ onClick: l.onUnlink, style: "flex:none; font-size:12px; font-weight:700; padding:6px 12px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Unlink")
+      ))
+    ) : null,
+    h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Relationship"),
+    h("div", { style: "display:flex; gap:8px" },
+      btn({ onClick: V.onPickConnectType("spouse"), style: seg(V.connectType === "spouse") }, "⚭ Married (no kids together)"),
+      btn({ onClick: V.onPickConnectType("sibling"), style: seg(V.connectType === "sibling") }, "⇄ Siblings")
+    ),
+    h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a; margin-top:2px" }, "Connect to"),
+    V.connectOthers.length
+      ? h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+          V.connectOthers.map((p, i) => btn({ key: "co" + i, onClick: p.onConnect, style: "display:flex; align-items:baseline; gap:8px; text-align:left; padding:13px 16px; border-radius:16px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" },
+            h("span", { style: "font-size:15px; font-weight:700" }, p.name),
+            p.years ? h("span", { style: "font-size:12px; color:#82796a" }, p.years) : null
+          )))
+      : h("div", { style: "font-size:13px; color:#82796a; line-height:1.5" }, "No other top-level people yet. Start another branch first, then connect them."),
+    btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Close")
   );
 }
 
