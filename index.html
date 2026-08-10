@@ -444,8 +444,10 @@ const App = {
       s += "</g>";
     });
     const focused = !!root.focused;
+    // The hub shows the focused person's own generation colour (family centre = accent).
+    const hubColor = focused ? this.gen(Math.max(0, root.gen)).color : this.accent();
     s += '<g' + (focused ? ' data-node="__up" style="cursor:pointer"' : "") + ">";
-    s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + R0 + '" fill="' + this.accent() + '"/>';
+    s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + R0 + '" fill="' + hubColor + '"/>';
     if (focused) s += '<text x="' + cx + '" y="' + (cy - R0 + 20) + '" text-anchor="middle" fill="#ffffffcc" style="font-size:13px;pointer-events:none">↑ back</text>';
     s += '<text x="' + cx + '" y="' + (cy + (focused ? 8 : 5)) + '" text-anchor="middle" fill="#fff" style="font-size:' + (root.short.length > 9 ? 14 : 17) + 'px;font-weight:700;font-family:Caprasimo,serif;pointer-events:none">' + esc(root.short) + "</text>";
     s += "</g>";
