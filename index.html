@@ -674,9 +674,9 @@ const App = {
       const newParent = gone.parentId || null;
       const kids = this.kidsOf(id).length;
       this.setState(s => ({
-        people: s.people
+        people: this.resolveFlags(s.people
           .filter(p => p.id !== id)
-          .map(p => p.parentId === id ? Object.assign({}, p, { parentId: newParent }) : p),
+          .map(p => p.parentId === id ? Object.assign({}, p, { parentId: newParent }) : p)),
         sheet: null, deleteId: null, selected: null,
         log: this.logEntry(s, "removed", gone.name, "remove",
           kids ? "kept the " + kids + " " + (kids === 1 ? "child" : "children") + " below, moved up a generation" : null),
@@ -686,7 +686,7 @@ const App = {
       const ids = [id].concat(this.descendants(id));
       const extra = ids.length - 1;
       this.setState(s => ({
-        people: s.people.filter(p => ids.indexOf(p.id) === -1),
+        people: this.resolveFlags(s.people.filter(p => ids.indexOf(p.id) === -1)),
         sheet: null, deleteId: null, selected: null,
         log: this.logEntry(s, "removed", gone.name, "remove",
           extra ? "and the " + extra + " " + (extra === 1 ? "person" : "people") + " below them" : null),
@@ -699,6 +699,12 @@ const App = {
     out = out || [];
     this.kidsOf(id).forEach(k => { out.push(k.id); this.descendants(k.id, out); });
     return out;
+  },
+  // A duplicate flag needs a pair. Once fewer than two flagged remain, clear it.
+  resolveFlags(people) {
+    return people.filter(p => p.flag).length < 2
+      ? people.map(p => p.flag ? Object.assign({}, p, { flag: false }) : p)
+      : people;
   },
 
   flatten(forBig, expandAll) {
@@ -923,7 +929,8 @@ const App = {
         })),
       isFlagSheet: s.sheet === "flag",
       flagPair: s.people.filter(p => p.flag).slice(0, 2).map(p => ({
-        name: p.name, meta: [this.years(p), p.place].filter(Boolean).join(" · "), addedBy: p.addedBy
+        id: p.id, name: p.name, meta: [this.years(p), p.place].filter(Boolean).join(" · "), addedBy: p.addedBy,
+        onRemove: () => this.setState({ sheet: "delete", deleteId: p.id })
       })),
       thread: s.thread,
       replyText: s.replyText,
@@ -939,18 +946,6 @@ const App = {
           sheet: null,
           log: this.logEntry(st, "kept both", pair[0].name + " and " + pair[1].name, "flag", "left flagged for the family to settle"),
           toast: { text: "Kept both. Still flagged for later.", i: "✓", c: "#7a8a5e" }
-        }), () => this.flashToast());
-      },
-      onMerge: () => {
-        const pair = s.people.filter(p => p.flag).slice(0, 2);
-        if (pair.length < 2) return;
-        this.pushUndo();
-        this.setState(st => ({
-          sheet: null, selected: null,
-          people: st.people.filter(p => p.id !== pair[1].id)
-            .map(p => p.id === pair[0].id ? Object.assign({}, p, { flag: false, place: p.place || pair[1].place }) : p),
-          log: this.logEntry(st, "merged", pair[1].name + " into " + pair[0].name, "merge", "one record now — the other name stays in this log"),
-          toast: { text: "Merged into " + pair[0].name + ". Everyone sees it now.", i: "✓", c: this.accent() }
         }), () => this.flashToast());
       },
       isEditSheet: s.sheet === "edit", isDeleteSheet: s.sheet === "delete",
@@ -1800,13 +1795,14 @@ function flagSheet(V) {
     GRAB,
     h("div", { style: "display:flex; flex-direction:column; gap:5px" },
       h("div", { style: "font-family:Caprasimo, serif; font-size:24px; line-height:1.1" }, "Two people, one name"),
-      h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "Both stay on the tree until the family decides. Nothing is joined behind your back.")
+      h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "Talk it over, then keep both — or remove the entry that's a mistake. Nothing is joined behind your back.")
     ),
     h("div", { style: "display:flex; gap:10px" },
-      V.flagPair.map((p, i) => h("div", { key: "fp" + i, style: "flex:1; padding:14px; border-radius:24px; background:#f5ead8; border:1.5px solid #dcd3c4; display:flex; flex-direction:column; gap:6px" },
+      V.flagPair.map((p, i) => h("div", { key: "fp" + i, style: "flex:1; padding:14px; border-radius:24px; background:#f5ead8; border:1.5px solid #dcd3c4; display:flex; flex-direction:column; gap:8px" },
         h("div", { style: "font-size:14px; font-weight:800" }, p.name),
         h("div", { style: "font-size:12px; color:#645c50" }, p.meta),
-        h("div", { style: "font-size:11px; color:#82796a" }, "by " + p.addedBy)
+        h("div", { style: "font-size:11px; color:#82796a" }, "by " + p.addedBy),
+        btn({ onClick: p.onRemove, style: "margin-top:2px; align-self:flex-start; font-size:12px; font-weight:700; padding:8px 13px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove this")
       ))
     ),
     h("div", { style: "display:flex; flex-direction:column; gap:11px" },
@@ -1819,10 +1815,7 @@ function flagSheet(V) {
       inp({ value: V.replyText, onChange: V.onReply, placeholder: "Say something…", style: "flex:1; font-size:15px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
       btn({ onClick: V.onSendReply, style: "flex:none; font-size:15px; font-weight:700; padding:0 20px; border-radius:999px; border:none; background:#201e1d; color:#f9f4ed; cursor:pointer" }, "Send")
     ),
-    h("div", { style: "display:flex; gap:10px" },
-      btn({ onClick: V.onKeepBoth, style: "flex:1; font-size:14px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #7a8a5e; background:#f0fae1; color:#56633f; cursor:pointer" }, "Keep both for now"),
-      btn({ onClick: V.onMerge, style: "flex:1; font-size:14px; font-weight:700; padding:15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer" }, "Merge them")
-    )
+    btn({ onClick: V.onKeepBoth, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #7a8a5e; background:#f0fae1; color:#56633f; cursor:pointer" }, "Keep both for now")
   );
 }
 
