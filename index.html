@@ -953,6 +953,9 @@ const App = {
       isEditSheet: s.sheet === "edit", isDeleteSheet: s.sheet === "delete",
       isBoardSheet: s.sheet === "board", isShareSheet: s.sheet === "share",
       isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
+      isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu",
+      onOpenMenu: () => this.setState({ sheet: "menu" }),
+      onOpenShareMenu: () => this.setState({ sheet: "sharemenu" }),
       onOpenBoard: () => this.setState({ sheet: "board" }),
       onOpenShare: () => this.setState({ sheet: "share" }),
       onOpenDownload: () => this.setState({ sheet: "download" }),
@@ -1365,64 +1368,41 @@ function appSidebar(V) {
 }
 
 function appHeader(V, wide) {
-  return h("div", { style: "flex:none; background:#f9f4ed; border-bottom:1.5px solid #dcd3c4; padding:8px 18px 9px; display:flex; flex-direction:column; gap:7px" },
+  const iconBtn = "flex:none; display:flex; align-items:center; justify-content:center; border-radius:999px; cursor:pointer;";
+  return h("div", { style: "flex:none; background:#f9f4ed; border-bottom:1.5px solid #dcd3c4; padding:8px 16px 9px; display:flex; flex-direction:column; gap:7px" },
+    // Row 1 — home + boards
     h("div", { style: "display:flex; align-items:center; gap:8px" },
-      btn({ onClick: V.onGoLanding, title: "Roundtable home", style: "font-family:Caprasimo, serif; flex:none; width:32px; height:32px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; font-size:15px; cursor:pointer", hover: "background:#b2622d" }, "R"),
-      btn({ onClick: V.onLeaveBoard, style: "flex:none; display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:7px 13px 7px 11px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+      btn({ onClick: V.onGoLanding, title: "Roundtable home", style: "font-family:Caprasimo, serif; flex:none; width:30px; height:30px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; font-size:14px; cursor:pointer", hover: "background:#b2622d" }, "R"),
+      btn({ onClick: V.onLeaveBoard, style: "flex:none; display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:6px 12px 6px 10px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
         h("span", { style: "font-size:14px" }, "←"), h("span", null, "Boards"))
     ),
-    h("div", { style: "display:flex; align-items:center; gap:8px" },
+    // Row 2 — family name + edit, three-dot menu, and share icon (top-right)
+    h("div", { style: "display:flex; align-items:center; gap:7px" },
       inp({ id: "rt-familyname", value: V.familyName, onChange: V.onFamilyName, maxlength: "18", placeholder: "Family name", style: "flex:1; min-width:0; font-family:Caprasimo, serif; font-size:22px; line-height:1.15; color:#201e1d; background:transparent; border:none; outline:none; padding:0; text-overflow:ellipsis" }),
-      btn({ onClick: () => { const el = document.getElementById("rt-familyname"); if (el) { el.focus(); el.select(); } }, title: "Edit family name", "aria-label": "Edit family name", style: "flex:none; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#82796a; font-size:14px; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "✎")
+      btn({ onClick: () => { const el = document.getElementById("rt-familyname"); if (el) { el.focus(); el.select(); } }, title: "Edit family name", "aria-label": "Edit family name", style: iconBtn + " width:30px; height:30px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#82796a; font-size:14px", hover: "border-color:#c67139; color:#8c491a" }, "✎"),
+      btn({ onClick: V.onOpenMenu, title: "Log, expand, collapse, live activity", "aria-label": "More", style: iconBtn + " width:32px; height:32px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:20px; line-height:1", hover: "border-color:#c67139; color:#8c491a" }, "⋮"),
+      btn({ onClick: V.onOpenShareMenu, title: "Share & download", "aria-label": "Share", style: iconBtn + " width:34px; height:34px; border:none; background:#c67139; color:#fff2eb; font-size:15px", hover: "background:#b2622d" }, "↗")
     ),
+    // Row 3 — zoom (unchanged) + small Undo + Save
     h("div", { style: "display:flex; align-items:center; gap:6px" },
       h("div", { style: "flex:none; display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#ebddc5" },
         btn({ onClick: V.onZoomOut, style: "width:30px; height:30px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:17px; font-weight:700; cursor:pointer" }, "−"),
         h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#645c50; width:38px; text-align:center" }, V.zoomLabel),
         btn({ onClick: V.onZoomIn, style: "width:30px; height:30px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:17px; font-weight:700; cursor:pointer" }, "+")
       ),
-      btn({ onClick: V.onUndo, style: "flex:1; font-size:12px; font-weight:700; padding:9px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Undo")
+      btn({ onClick: V.onUndo, style: "flex:none; font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Undo"),
+      btn({ onClick: V.onOpenUpgrade, style: "flex:1; font-size:13px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
     ),
-    h("div", { style: "display:flex; align-items:stretch; gap:6px" },
-      btn({ onClick: V.onOpenLog, style: "flex:1; justify-content:center; display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; padding:9px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" },
-        h("span", { style: "display:flex; flex-direction:column; gap:2px" },
-          h("span", { style: "width:13px; height:2px; border-radius:999px; background:#201e1d; display:block" }),
-          h("span", { style: "width:13px; height:2px; border-radius:999px; background:#201e1d; display:block" }),
-          h("span", { style: "width:13px; height:2px; border-radius:999px; background:#201e1d; display:block" })
-        ),
-        h("span", null, "Log"),
-        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; color:#82796a" }, String(V.logCount))
-      ),
-      btn({ onClick: V.onOpenDownload, style: "flex:1; font-size:12px; font-weight:700; padding:9px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Download"),
-      btn({ onClick: V.onOpenUpgrade, style: "flex:1; font-size:12px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
-    ),
-    (V.shared && !wide) ? h("div", { style: "display:flex; align-items:center; flex-wrap:wrap; gap:7px" },
-      btn({ onClick: V.onOpenBoard, style: "flex:none; display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px; border:none; background:#ffe1d0; cursor:pointer" },
-        h("span", { style: "width:8px; height:8px; border-radius:999px; background:#7a8a5e; display:block" }),
-        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:13px; letter-spacing:.12em; font-weight:500; color:#8c491a" }, V.room),
-        h("span", { style: "font-size:12px; font-weight:700; color:#645c50" }, "· " + V.hereLabel)
-      ),
-      btn({ onClick: V.onOpenShare, style: "flex:none; font-size:13px; font-weight:700; padding:8px 14px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Share code"),
-      btn({ onClick: V.onOpenProjection, title: "Full-screen live view for a TV or projector", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:8px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
-        h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project")),
-      V.isPaid ? btn({ onClick: V.onOpenUpgrade, style: "flex:none; display:flex; align-items:center; gap:6px; padding:7px 13px; border-radius:999px; border:1.5px solid #7a8a5e; background:#f0fae1; cursor:pointer", hover: "background:#e1eecc" },
-        h("span", { style: "width:16px; height:16px; border-radius:999px; background:#7a8a5e; color:#f0fae1; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center" }, "✓"),
-        h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live")
-      ) : null
-    ) : null,
+    // Row 4 — search + Project
     h("div", { style: "display:flex; gap:7px" },
       inp({ value: V.query, onChange: V.onQuery, placeholder: "Find a name, a town, a year…", style: "flex:1; min-width:0; font-size:14px; padding:11px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-      btn({ onClick: V.onExpandAll, style: "flex:none; font-size:12px; font-weight:700; padding:10px 12px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer" }, "Expand"),
-      btn({ onClick: V.onCollapseAll, style: "flex:none; font-size:12px; font-weight:700; padding:10px 12px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer" }, "Collapse")
+      btn({ onClick: V.onOpenProjection, title: "Full-screen live view for a TV or projector", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:10px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+        h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project"))
     ),
-    V.isPaid ? h("div", { style: "display:flex; align-items:center; gap:8px; padding:8px 13px; border-radius:999px; background:#f0fae1; border:1.5px solid #ccdbb2" },
-      h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink),
-      h("span", { style: "font-size:11px; font-weight:800; color:#56633f; white-space:nowrap" }, "· renews " + V.renewDate)
-    ) : null,
-    h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.06em; color:#82796a" }, V.countLine),
-    h("div", { style: "display:flex; gap:6px; flex-wrap:wrap; align-items:center" },
+    // Row 5 — generation filters, scroll sideways (no wrap)
+    h("div", { class: "noscroll", style: "display:flex; gap:6px; align-items:center; overflow-x:auto; padding-bottom:1px" },
       V.genFilters.map((f, i) => btn({ key: "gf" + i, onClick: f.onPick, title: f.label === "All" ? "Show every generation" : "Show only " + f.label,
-        style: "display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.06em; font-weight:700; padding:6px 11px; border-radius:999px; cursor:pointer; border:1.5px solid " + (f.active ? f.color : "#dcd3c4") + "; background:" + (f.active ? f.color : "#f9f4ed") + "; color:" + (f.active ? "#fff2eb" : "#645c50") },
+        style: "flex:none; white-space:nowrap; display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.06em; font-weight:700; padding:6px 11px; border-radius:999px; cursor:pointer; border:1.5px solid " + (f.active ? f.color : "#dcd3c4") + "; background:" + (f.active ? f.color : "#f9f4ed") + "; color:" + (f.active ? "#fff2eb" : "#645c50") },
         f.label === "All" ? null : h("span", { style: "width:14px; height:5px; border-radius:999px; display:block; background:" + (f.active ? "#fff2eb" : f.color) }),
         h("span", null, f.label.toUpperCase()),
         f.count != null ? h("span", { style: "opacity:.75" }, "(" + f.count + ")") : null
@@ -1584,6 +1564,8 @@ function sheets(V) {
   let n = null;
   if (V.isEditSheet) n = editSheet(V);
   else if (V.isAddSheet) n = addSheet(V);
+  else if (V.isMenuSheet) n = menuSheet(V);
+  else if (V.isShareMenuSheet) n = shareMenuSheet(V);
   else if (V.isParentPickSheet) n = parentPickSheet(V);
   else if (V.isDeleteSheet) n = deleteSheet(V);
   else if (V.isFlagSheet) n = flagSheet(V);
@@ -1677,6 +1659,76 @@ function addSheet(V) {
       )
     ),
     btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Cancel")
+  );
+}
+
+function hamburgerIcon() {
+  return h("span", { style: "display:flex; flex-direction:column; gap:2px; flex:none" },
+    h("span", { style: "width:15px; height:2px; border-radius:999px; background:#201e1d; display:block" }),
+    h("span", { style: "width:15px; height:2px; border-radius:999px; background:#201e1d; display:block" }),
+    h("span", { style: "width:15px; height:2px; border-radius:999px; background:#201e1d; display:block" })
+  );
+}
+
+// Three-dot menu: board info + log / expand / collapse + live activity ticker.
+function menuSheet(V) {
+  const item = "display:flex; align-items:center; gap:12px; width:100%; text-align:left; font-size:15px; font-weight:700; padding:14px 16px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
+  return h("div", { key: "sheet-menu", style: SHEET + "; max-height:82%; gap:12px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "padding:15px 16px; border-radius:22px; background:#ffe1d0; display:flex; align-items:center; justify-content:space-between; gap:10px" },
+      h("div", { style: "display:flex; flex-direction:column; gap:2px; min-width:0" },
+        h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#8c491a" }, "Board " + V.room),
+        h("div", { style: "font-size:12px; color:#645c50" }, V.countLine)
+      ),
+      h("div", { style: "display:flex; align-items:center; gap:7px; flex:none" },
+        h("span", { style: "width:8px; height:8px; border-radius:999px; background:#7a8a5e; display:block" }),
+        h("span", { style: "font-size:13px; font-weight:800; color:#56633f; white-space:nowrap" }, V.hereLabel)
+      )
+    ),
+    V.isPaid ? h("div", { style: "padding:11px 14px; border-radius:16px; background:#f0fae1; border:1.5px solid #ccdbb2; display:flex; align-items:center; gap:8px" },
+      h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live"),
+      h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink + " · renews " + V.renewDate)
+    ) : null,
+    btn({ onClick: V.onOpenLog, style: item, hover: "border-color:#c67139" },
+      hamburgerIcon(), h("span", { style: "flex:1" }, "Change log"),
+      h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#82796a" }, String(V.logCount))
+    ),
+    h("div", { style: "display:flex; gap:10px" },
+      btn({ onClick: V.onExpandAll, style: item + "; justify-content:center", hover: "border-color:#c67139" }, "Expand all"),
+      btn({ onClick: V.onCollapseAll, style: item + "; justify-content:center", hover: "border-color:#c67139" }, "Collapse all")
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:9px" },
+      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Live activity"),
+      V.feed.length
+        ? h("div", { style: "display:flex; flex-direction:column; gap:9px" },
+            V.feed.slice(0, 6).map((f, i) => h("div", { key: "mf" + i, style: "font-size:13px; line-height:1.45; color:#201e1d" },
+              h("span", { style: "font-weight:800" }, f.who), " " + f.text + " ",
+              h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; color:#82796a" }, f.t)
+            )))
+        : h("div", { style: "font-size:13px; color:#82796a" }, "No changes yet.")
+    ),
+    btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Close")
+  );
+}
+
+// Share icon popup: share the code or download the tree.
+function shareMenuSheet(V) {
+  const item = "display:flex; align-items:center; gap:13px; width:100%; text-align:left; font-size:16px; font-weight:700; padding:16px 18px; border-radius:20px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
+  return h("div", { key: "sheet-sharemenu", style: SHEET + "; gap:12px" },
+    GRAB,
+    h("div", { style: "display:flex; flex-direction:column; gap:4px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px" }, "Share this tree"),
+      h("div", { style: "font-size:13px; color:#645c50" }, "Board " + V.room)
+    ),
+    btn({ onClick: V.onOpenShare, style: item, hover: "border-color:#c67139" },
+      h("span", { style: "font-size:18px" }, "↗"), h("span", { style: "flex:1" }, "Share code"),
+      h("span", { style: "font-size:12px; font-weight:600; color:#82796a" }, "send the join code")
+    ),
+    btn({ onClick: V.onOpenDownload, style: item, hover: "border-color:#c67139" },
+      h("span", { style: "font-size:18px" }, "⇩"), h("span", { style: "flex:1" }, "Download"),
+      h("span", { style: "font-size:12px; font-weight:600; color:#82796a" }, "PDF or image")
+    ),
+    btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Close")
   );
 }
 
