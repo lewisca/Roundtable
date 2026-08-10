@@ -178,7 +178,9 @@ function patch(parent, oldVn, newVn, index) {
   const el = existing;
   newVn._el = el;
   patchProps(el, oldVn.props, newVn.props);
-  patchChildren(el, oldVn.children, newVn.children);
+  // `raw` elements have their children managed imperatively (e.g. injected SVG) —
+  // don't let the vdom reconcile/trim them away.
+  if (!(newVn.props && newVn.props.raw)) patchChildren(el, oldVn.children, newVn.children);
 }
 
 function patchChildren(el, oldKids, newKids) {
@@ -296,6 +298,8 @@ const App = {
     hereCount: 1,
     query: "",
     genView: "all",
+    viewMode: "list",
+    radialSel: null,
     collapsed: {},
     selected: null,
     links: [],
@@ -355,7 +359,7 @@ const App = {
       patch(this._root, this._vnode, next, 0);
     }
     this._vnode = next;
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => this.syncGenArrows());
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { this.syncGenArrows(); this.syncRadial(); });
   },
   // Show the generation-filter scroll arrows only when the row overflows.
   syncGenArrows() {
@@ -366,6 +370,78 @@ const App = {
     const overflow = el.scrollWidth - el.clientWidth > 2;
     L.style.display = (overflow && el.scrollLeft > 1) ? "flex" : "none";
     R.style.display = (overflow && el.scrollLeft + el.clientWidth < el.scrollWidth - 1) ? "flex" : "none";
+  },
+
+  /* ---- radial (circular) view — read-only overview ------------------ */
+  radialData() {
+    const people = this.state.people, self = this;
+    const kidsOf = pid => people.filter(p => (p.parentId || null) === (pid || null));
+    const mk = p => ({ id: p.id, name: p.name, short: (p.name || "?").trim().split(/\s+/)[0], c: kidsOf(p.id).map(mk) });
+    const fam = this.state.familyName || "Family";
+    return { id: "__center", name: fam, short: (fam.split(/\s+/)[0] || "Family"), c: kidsOf(null).map(mk) };
+  },
+  radialLayout(root) {
+    const weigh = n => { n.w = n.c.length ? n.c.reduce((s, k) => s + weigh(k), 0) : 1; return n.w; };
+    weigh(root);
+    const out = [];
+    const walk = (node, depth, a0, a1, parent) => {
+      const rec = { node: node, depth: depth, a0: a0, a1: a1, mid: (a0 + a1) / 2, parent: parent };
+      out.push(rec);
+      let a = a0;
+      node.c.forEach(k => { const span = (a1 - a0) * (k.w / node.w); walk(k, depth + 1, a, a + span, rec); a += span; });
+      return rec;
+    };
+    walk(root, 0, -Math.PI / 2, Math.PI * 1.5, null);
+    return out;
+  },
+  radialSVG() {
+    const root = this.radialData();
+    const nodes = this.radialLayout(root);
+    const maxD = nodes.reduce((m, n) => Math.max(m, n.depth), 0);
+    const SIZE = 700, cx = 350, cy = 350, R0 = 60;
+    const BAND = (SIZE / 2 - R0 - 26) / Math.max(1, maxD);
+    const rIn = d => R0 + (d - 1) * BAND, rOut = d => R0 + d * BAND;
+    const pol = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    const arc = (r0, r1, a0, a1) => {
+      const lg = a1 - a0 > Math.PI ? 1 : 0;
+      const [x0, y0] = pol(r0, a0), [x1, y1] = pol(r0, a1), [x2, y2] = pol(r1, a1), [x3, y3] = pol(r1, a0);
+      return "M" + x0 + " " + y0 + "A" + r0 + " " + r0 + " 0 " + lg + " 1 " + x1 + " " + y1 + "L" + x2 + " " + y2 + "A" + r1 + " " + r1 + " 0 " + lg + " 0 " + x3 + " " + y3 + "Z";
+    };
+    const selId = this.state.radialSel;
+    const selRec = selId ? nodes.find(n => n.node.id === selId) : null;
+    const lineage = {}; { let cur = selRec; while (cur) { lineage[cur.node.id] = true; cur = cur.parent; } }
+    const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    let s = '<svg viewBox="0 0 ' + SIZE + " " + SIZE + '" style="width:100%;height:auto;display:block">';
+    for (let i = 0; i < maxD; i++) s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + rOut(i + 1) + '" fill="none" stroke="#dcd3c4" stroke-width="1"/>';
+    nodes.filter(n => n.depth > 0).forEach(n => {
+      const c = this.gen(n.depth - 1).color;
+      const dim = selRec && !lineage[n.node.id];
+      const isSel = selRec && selRec.node.id === n.node.id;
+      const r0 = rIn(n.depth), r1 = rOut(n.depth), pad = 0.008;
+      const [lx, ly] = pol((r0 + r1) / 2, n.mid);
+      const deg = (n.mid * 180) / Math.PI, flip = deg > 90 && deg < 270;
+      const arcW = (n.a1 - n.a0) * ((r0 + r1) / 2);
+      s += '<g data-node="' + esc(n.node.id) + '" style="cursor:pointer">';
+      s += '<path d="' + arc(r0 + 3, r1 - 3, n.a0 + pad, n.a1 - pad) + '" fill="' + c + '" fill-opacity="' + (dim ? 0.16 : isSel ? 1 : 0.82) + '" stroke="#f5ead8" stroke-width="2.5"/>';
+      if (arcW > 34) {
+        const fs = Math.min(16, Math.max(11, arcW / 5));
+        s += '<text x="' + lx + '" y="' + ly + '" transform="rotate(' + (flip ? deg + 180 : deg) + ", " + lx + ", " + ly + ')" text-anchor="middle" dominant-baseline="middle" fill="' + (dim ? "#00000033" : "#fff") + '" style="font-size:' + fs + 'px;font-weight:700;pointer-events:none">' + esc(n.node.short) + "</text>";
+      }
+      s += "</g>";
+    });
+    s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + R0 + '" fill="' + this.accent() + '"/>';
+    s += '<text x="' + cx + '" y="' + (cy + 5) + '" text-anchor="middle" fill="#fff" style="font-size:17px;font-weight:700;font-family:Caprasimo,serif;pointer-events:none">' + esc(root.short) + "</text>";
+    s += "</svg>";
+    return s;
+  },
+  syncRadial() {
+    if (this.state.viewMode !== "radial" || this.state.step !== "app") return;
+    const host = document.getElementById("radial-host");
+    if (!host) return;
+    const sig = this.state.people.map(p => p.id + ":" + (p.parentId || "")).join(",") + "|" + (this.state.radialSel || "") + "|" + this.state.familyName;
+    if (host._sig === sig) return;
+    host._sig = sig;
+    host.innerHTML = this.radialSVG();
   },
 
   /* ---- persistence -------------------------------------------------- */
@@ -495,7 +571,7 @@ const App = {
     const data = this.loadRoom(room);
     if (data) {
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", toast: null,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, toast: null,
         familyName: data.familyName || "", people: data.people || [], feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
         collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
@@ -504,7 +580,7 @@ const App = {
       // brand-new empty board
       const started = { who: this.state.myName || "You", i: this.initials(this.state.myName || "You"), c: "#201e1d", verb: "started", target: "board " + room, kind: "board", when: this.stamp() };
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", toast: null,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, toast: null,
         familyName: "", people: [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, links: [], connectFor: null, subscribed: false
       });
     }
@@ -856,6 +932,21 @@ const App = {
         active: (o.key === "all") ? (s.genView === "all") : (s.genView === o.key),
         onPick: () => this.setState({ genView: o.key, selected: null })
       }));
+    const legend2 = Array.from({ length: gens }, (_, d) => ({ color: this.gen(d).color, label: "Gen " + (d + 1) }));
+    let radialDetail = null;
+    if (s.radialSel) {
+      const rp = s.people.find(x => x.id === s.radialSel);
+      if (rp) {
+        const sp = (this.partnersOf(rp)[0] || {}).name;
+        const kc = s.people.filter(x => x.parentId === rp.id).length;
+        const meta = [this.years(rp), sp ? ("♥ " + sp) : null, kc ? (kc + " " + (kc === 1 ? "child" : "children")) : null].filter(Boolean).join(" · ");
+        const byId = id => s.people.find(x => x.id === id);
+        const path = []; let cur = rp;
+        while (cur) { path.unshift(cur.name.split(/\s+/)[0]); cur = cur.parentId ? byId(cur.parentId) : null; }
+        path.unshift((s.familyName || "Family").split(/\s+/)[0]);
+        radialDetail = { name: rp.name, meta: meta, path: path.join("  ›  ") };
+      }
+    }
     const rows = this.flatten(false);
     const anyMatch = rows.some(r => r.isCard && r.dim === 1);
     const contributors = [
@@ -1025,6 +1116,16 @@ const App = {
       isBoardSheet: s.sheet === "board", isShareSheet: s.sheet === "share",
       isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
       isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu",
+      isRadial: s.viewMode === "radial",
+      onToggleView: () => this.setState({ viewMode: s.viewMode === "radial" ? "list" : "radial", radialSel: null, sheet: null }),
+      onRadialClick: (e) => {
+        const g = e.target && e.target.closest ? e.target.closest("[data-node]") : null;
+        const id = g ? g.getAttribute("data-node") : null;
+        if (!id) return;
+        this.setState(st => ({ radialSel: st.radialSel === id ? null : id }));
+      },
+      radialDetail: radialDetail,
+      legend2: legend2,
       onOpenMenu: () => this.setState({ sheet: "menu" }),
       onOpenShareMenu: () => this.setState({ sheet: "sharemenu" }),
       onOpenBoard: () => this.setState({ sheet: "board" }),
@@ -1376,7 +1477,7 @@ function viewApp(V) {
   if (V.wide) return appDesktop(V);
   return h("div", { key: "app", style: "flex:1; display:flex; flex-direction:column; min-height:0; position:relative" },
     appHeader(V),
-    appTree(V),
+    V.isRadial ? appRadial(V) : appTree(V),
     appToast(V),
     appScrim(V),
     sheets(V)
@@ -1388,7 +1489,7 @@ function appDesktop(V) {
   return h("div", { key: "app", style: "flex:1; min-height:0; display:flex; position:relative" },
     h("div", { style: "flex:1; min-width:0; max-width:680px; display:flex; flex-direction:column; min-height:0" },
       appHeader(V, true),
-      appTree(V)
+      V.isRadial ? appRadial(V) : appTree(V)
     ),
     appSidebar(V),
     appToast(V),
@@ -1463,8 +1564,8 @@ function appHeader(V, wide) {
       btn({ onClick: V.onOpenMenu, title: "Log, expand, collapse, live activity", "aria-label": "More", style: iconBtn + " width:32px; height:32px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:20px; line-height:1", hover: "border-color:#c67139; color:#8c491a" }, "⋮"),
       btn({ onClick: V.onOpenShareMenu, title: "Share & download", "aria-label": "Share", style: iconBtn + " width:34px; height:34px; border:none; background:#c67139; color:#fff2eb; font-size:15px", hover: "background:#b2622d" }, "↗")
     ),
-    // Row 3 — zoom (unchanged) + small Undo + Save
-    h("div", { style: "display:flex; align-items:center; gap:6px" },
+    // Row 3 — zoom + small Undo + Save (list view only)
+    V.isRadial ? null : h("div", { style: "display:flex; align-items:center; gap:6px" },
       h("div", { style: "flex:none; display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#ebddc5" },
         btn({ onClick: V.onZoomOut, style: "width:30px; height:30px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:17px; font-weight:700; cursor:pointer" }, "−"),
         h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#645c50; width:38px; text-align:center" }, V.zoomLabel),
@@ -1473,14 +1574,14 @@ function appHeader(V, wide) {
       btn({ onClick: V.onUndo, style: "flex:none; font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Undo"),
       btn({ onClick: V.onOpenUpgrade, style: "flex:1; font-size:13px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
     ),
-    // Row 4 — search + Project
-    h("div", { style: "display:flex; gap:7px" },
+    // Row 4 — search + Project (list view only)
+    V.isRadial ? null : h("div", { style: "display:flex; gap:7px" },
       inp({ value: V.query, onChange: V.onQuery, placeholder: "Find a name, a town, a year…", style: "flex:1; min-width:0; font-size:14px; padding:11px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
       btn({ onClick: V.onOpenProjection, title: "Full-screen live view for a TV or projector", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:10px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
         h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project"))
     ),
-    // Row 5 — generation filters, scroll sideways (no wrap) with arrows when overflowing
-    h("div", { style: "display:flex; align-items:center; gap:4px" },
+    // Row 5 — generation filters, scroll sideways (list view only)
+    V.isRadial ? null : h("div", { style: "display:flex; align-items:center; gap:4px" },
       btn({ id: "gen-arrow-left", onClick: () => { const e = document.getElementById("gen-scroll"); if (e) e.scrollBy({ left: -200, behavior: "smooth" }); }, title: "Scroll generations left", "aria-label": "Scroll left",
         style: "display:none; flex:none; width:26px; height:26px; align-items:center; justify-content:center; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:16px; line-height:1; cursor:pointer" }, "‹"),
       h("div", { id: "gen-scroll", class: "noscroll", onScroll: () => App.syncGenArrows(), style: "flex:1; min-width:0; display:flex; gap:6px; align-items:center; overflow-x:auto; padding-bottom:1px" },
@@ -1505,6 +1606,29 @@ function appTree(V) {
         btn({ onClick: V.onAddRoot, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:16px 18px; border-radius:24px; border:2px dashed #c0b6a5; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "+ Start another branch of the family")
       ),
       V.noMatch ? h("div", { key: "nomatch", style: "padding:22px 4px; font-size:14px; color:#645c50; line-height:1.5" }, "Nobody matches “" + V.query + "”. Try a first name on its own.") : null
+    )
+  );
+}
+
+// Radial (circular) view — read-only overview. The SVG itself is injected into
+// #radial-host by App.syncRadial(); this renders the frame, note, and detail.
+function appRadial(V) {
+  return h("div", { key: "radial", class: "noscroll", style: "flex:1; min-height:0; overflow:auto; padding:12px 16px 26px; display:flex; flex-direction:column; gap:12px" },
+    h("div", { style: "padding:10px 14px; border-radius:16px; background:#fff2eb; border:1.5px solid #f6a06b; font-size:12px; line-height:1.5; color:#8c491a" },
+      "Radial view is a read-only overview — everyone on one screen. Switch to List view (⋮ menu) to add or edit people."),
+    h("div", { id: "radial-host", raw: true, onClick: V.onRadialClick, style: "width:100%" }),
+    V.radialDetail
+      ? h("div", { style: "border-radius:20px; padding:16px 18px; background:#f9f4ed; border:1.5px solid #dcd3c4; display:flex; flex-direction:column; gap:6px" },
+          h("div", { style: "font-family:Caprasimo, serif; font-size:22px; color:#201e1d" }, V.radialDetail.name),
+          V.radialDetail.meta ? h("div", { style: "font-size:14px; color:#645c50" }, V.radialDetail.meta) : null,
+          h("div", { style: "font-size:13px; color:#8c491a" }, V.radialDetail.path)
+        )
+      : h("div", { style: "border-radius:20px; padding:16px 18px; background:#f9f4ed; border:1.5px solid #dcd3c4; font-size:14px; color:#82796a; line-height:1.5" }, "Tap any wedge — the whole line back to the centre lights up."),
+    h("div", { style: "display:flex; gap:12px; flex-wrap:wrap" },
+      V.legend2.map((g, i) => h("div", { key: "rl" + i, style: "display:flex; align-items:center; gap:6px" },
+        h("span", { style: "width:16px; height:6px; border-radius:3px; display:block; background:" + g.color }),
+        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#82796a" }, g.label)
+      ))
     )
   );
 }
@@ -1826,6 +1950,13 @@ function menuSheet(V) {
       h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live"),
       h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink + " · renews " + V.renewDate)
     ) : null,
+    btn({ onClick: V.onToggleView, style: item, hover: "border-color:#c67139" },
+      h("span", { style: "font-size:17px" }, V.isRadial ? "☰" : "◎"),
+      h("span", { style: "display:flex; flex-direction:column; gap:1px" },
+        h("span", null, V.isRadial ? "Switch to List view" : "Switch to Radial view"),
+        h("span", { style: "font-size:11px; font-weight:600; color:#82796a" }, V.isRadial ? "The scrollable list you add and edit in" : "A circular read-only overview of everyone")
+      )
+    ),
     btn({ onClick: V.onOpenLog, style: item, hover: "border-color:#c67139" },
       hamburgerIcon(), h("span", { style: "flex:1" }, "Change log"),
       h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#82796a" }, String(V.logCount))
