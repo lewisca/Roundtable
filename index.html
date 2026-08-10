@@ -288,6 +288,7 @@ const App = {
     room: DEMO_ROOM,
     shared: true,
     myName: "",
+    nameError: null,
     familyName: SEED.familyName,
     zoom: 1,
     projection: false,
@@ -847,11 +848,15 @@ const App = {
       onLeaveBoard: () => { clearInterval(this._liveTimer); this.unsubscribeRoom(); this._remoteReady = false; this.setState({ step: "board", sheet: null, selected: null, projection: false }); },
       onLandingJoin: () => this.setState({ step: "name", joining: true }),
       myName: s.myName,
-      onMyName: e => this.setState({ myName: e.target.value }),
+      nameError: s.nameError,
+      // Names only — strip digits and other non-name characters so a board code
+      // can never be entered here (spaces and ' . , - stay for names like O'Brien, Sr.).
+      onMyName: e => this.setState({ myName: e.target.value.replace(/[^\p{L}\s'.,\-]/gu, ""), nameError: null }),
       onNameNext: () => {
-        if (!s.myName.trim()) return;
+        const nm = (s.myName || "").trim();
+        if (!nm || !/\p{L}/u.test(nm)) { this.setState({ nameError: "Please enter your name — letters only (this isn't the board code)." }); return; }
         if (this._deepLinkCode) { const c = this._deepLinkCode; this._deepLinkCode = null; this.enterRoom(c, false); return; }
-        this.setState({ step: "board", room: s.joining ? s.room : this.newCode() });
+        this.setState({ step: "board", room: s.joining ? s.room : this.newCode(), nameError: null });
       },
       joining: s.joining, notJoining: !s.joining,
       codeInput: s.codeInput,
@@ -1253,7 +1258,8 @@ function viewName(V) {
     h("div", { style: "font-size:16px; line-height:1.5; color:#645c50; text-wrap:pretty" }, "Your name sits next to everyone you add, so the family knows who to ask when a date looks wrong."),
     h("div", { style: "display:flex; flex-direction:column; gap:10px; margin-top:4px" },
       h("label", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Your name"),
-      inp({ value: V.myName, onChange: V.onMyName, placeholder: "e.g. Aunt Rita", style: "font-size:19px; padding:17px 22px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; outline:none; width:100%" }),
+      inp({ value: V.myName, onChange: V.onMyName, maxlength: "40", placeholder: "e.g. Aunt Rita", style: "font-size:19px; padding:17px 22px; border-radius:999px; border:1.5px solid " + (V.nameError ? "#f6a06b" : "#dcd3c4") + "; background:#f9f4ed; color:#201e1d; outline:none; width:100%" }),
+      V.nameError ? h("div", { style: "font-size:13px; font-weight:700; line-height:1.45; color:#8c491a" }, V.nameError) : null,
       btn({ onClick: V.onNameNext, style: "font-size:17px; font-weight:700; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Continue")
     )
   );
