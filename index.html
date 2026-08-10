@@ -423,15 +423,19 @@ const App = {
       const isSel = selRec && selRec.node.id === n.node.id;
       const r0 = rIn(n.depth), r1 = rOut(n.depth), pad = 0.008;
       const [lx, ly] = pol((r0 + r1) / 2, n.mid);
-      const deg = (n.mid * 180) / Math.PI, flip = deg > 90 && deg < 270;
-      const arcW = (n.a1 - n.a0) * ((r0 + r1) / 2);
+      const arcW = (n.a1 - n.a0) * ((r0 + r1) / 2);   // tangential space along the arc
+      // Tangential label: text follows the arc (uses its horizontal length) and
+      // stays inside its own ring, then flipped so it's never upside-down.
+      let rot = (n.mid * 180) / Math.PI + 90;
+      const rn = ((rot % 360) + 360) % 360;
+      if (rn > 90 && rn < 270) rot += 180;
       s += '<g data-node="' + esc(n.node.id) + '" style="cursor:pointer">';
       s += '<path d="' + arc(r0 + 3, r1 - 3, n.a0 + pad, n.a1 - pad) + '" fill="' + c + '" fill-opacity="' + (dim ? 0.16 : isSel ? 1 : 0.82) + '" stroke="#f5ead8" stroke-width="2.5"/>';
       if (arcW > 26) {
-        const fs = Math.min(15, Math.max(10, arcW / 5));
-        const maxChars = Math.max(1, Math.floor(arcW / (fs * 0.6)));
+        const fs = Math.min(15, Math.max(10, (r1 - r0) / 2.4));
+        const maxChars = Math.max(1, Math.floor(arcW / (fs * 0.62)));
         const label = n.node.short.length > maxChars ? n.node.short.slice(0, Math.max(1, maxChars - 1)) + "…" : n.node.short;
-        s += '<text x="' + lx + '" y="' + ly + '" transform="rotate(' + (flip ? deg + 180 : deg) + ", " + lx + ", " + ly + ')" text-anchor="middle" dominant-baseline="middle" fill="' + (dim ? "#00000033" : "#fff") + '" style="font-size:' + fs + 'px;font-weight:700;pointer-events:none">' + esc(label) + "</text>";
+        s += '<text x="' + lx + '" y="' + ly + '" transform="rotate(' + rot + ", " + lx + ", " + ly + ')" text-anchor="middle" dominant-baseline="middle" fill="' + (dim ? "#00000033" : "#fff") + '" style="font-size:' + fs + 'px;font-weight:700;pointer-events:none">' + esc(label) + "</text>";
       }
       s += "</g>";
     });
@@ -1642,23 +1646,23 @@ function appTree(V) {
 // #radial-host by App.syncRadial(); this renders the frame, note, and detail.
 function appRadial(V) {
   return h("div", { key: "radial", class: "noscroll", style: "flex:1; min-height:0; overflow:auto; padding:12px 16px 26px; display:flex; flex-direction:column; gap:12px" },
-    h("div", { style: "padding:10px 14px; border-radius:16px; background:#fff2eb; border:1.5px solid #f6a06b; font-size:12px; line-height:1.5; color:#8c491a" },
+    h("div", { key: "rnote", style: "padding:10px 14px; border-radius:16px; background:#fff2eb; border:1.5px solid #f6a06b; font-size:12px; line-height:1.5; color:#8c491a" },
       "Read-only overview. Tap a wedge to zoom into that branch (names get bigger); tap the centre to zoom back out. Switch to List view (⋮ menu) to add or edit."),
-    V.radialFocusPath ? h("div", { class: "noscroll", style: "display:flex; align-items:center; gap:4px; flex-wrap:wrap; overflow-x:auto" },
+    V.radialFocusPath ? h("div", { key: "rbc", class: "noscroll", style: "display:flex; align-items:center; gap:4px; flex-wrap:wrap; overflow-x:auto" },
       V.radialFocusPath.map((seg, i) => [
         i ? h("span", { key: "sep" + i, style: "color:#c0b6a5; font-size:12px" }, "›") : null,
         btn({ key: "seg" + i, onClick: seg.onJump, style: "font-size:12px; font-weight:700; padding:5px 11px; border-radius:999px; border:1.5px solid " + (i === V.radialFocusPath.length - 1 ? "#c67139" : "#dcd3c4") + "; background:" + (i === V.radialFocusPath.length - 1 ? "#ffe1d0" : "#f9f4ed") + "; color:#8c491a; cursor:pointer" }, seg.name)
       ])
     ) : null,
-    h("div", { id: "radial-host", raw: true, onClick: V.onRadialClick, style: "width:100%" }),
+    h("div", { key: "rhost", id: "radial-host", raw: true, onClick: V.onRadialClick, style: "width:100%" }),
     V.radialDetail
-      ? h("div", { style: "border-radius:20px; padding:16px 18px; background:#f9f4ed; border:1.5px solid #dcd3c4; display:flex; flex-direction:column; gap:6px" },
+      ? h("div", { key: "rdetail", style: "border-radius:20px; padding:16px 18px; background:#f9f4ed; border:1.5px solid #dcd3c4; display:flex; flex-direction:column; gap:6px" },
           h("div", { style: "font-family:Caprasimo, serif; font-size:22px; color:#201e1d" }, V.radialDetail.name),
           V.radialDetail.meta ? h("div", { style: "font-size:14px; color:#645c50" }, V.radialDetail.meta) : null,
           h("div", { style: "font-size:13px; color:#8c491a" }, V.radialDetail.path)
         )
-      : h("div", { style: "border-radius:20px; padding:16px 18px; background:#f9f4ed; border:1.5px solid #dcd3c4; font-size:14px; color:#82796a; line-height:1.5" }, "Tap any wedge — the whole line back to the centre lights up."),
-    h("div", { style: "display:flex; gap:12px; flex-wrap:wrap" },
+      : h("div", { key: "rdetail", style: "border-radius:20px; padding:16px 18px; background:#f9f4ed; border:1.5px solid #dcd3c4; font-size:14px; color:#82796a; line-height:1.5" }, "Tap any wedge — the whole line back to the centre lights up."),
+    h("div", { key: "rlegend", style: "display:flex; gap:12px; flex-wrap:wrap" },
       V.legend2.map((g, i) => h("div", { key: "rl" + i, style: "display:flex; align-items:center; gap:6px" },
         h("span", { style: "width:16px; height:6px; border-radius:3px; display:block; background:" + g.color }),
         h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#82796a" }, g.label)
