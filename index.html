@@ -355,6 +355,17 @@ const App = {
       patch(this._root, this._vnode, next, 0);
     }
     this._vnode = next;
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => this.syncGenArrows());
+  },
+  // Show the generation-filter scroll arrows only when the row overflows.
+  syncGenArrows() {
+    const el = document.getElementById("gen-scroll");
+    const L = document.getElementById("gen-arrow-left");
+    const R = document.getElementById("gen-arrow-right");
+    if (!el || !L || !R) return;
+    const overflow = el.scrollWidth - el.clientWidth > 2;
+    L.style.display = (overflow && el.scrollLeft > 1) ? "flex" : "none";
+    R.style.display = (overflow && el.scrollLeft + el.clientWidth < el.scrollWidth - 1) ? "flex" : "none";
   },
 
   /* ---- persistence -------------------------------------------------- */
@@ -839,7 +850,7 @@ const App = {
     const genCounts = [];
     s.people.forEach(p => { const d = this.depthOf(p); genCounts[d] = (genCounts[d] || 0) + 1; });
     const genFilters = [{ key: "all", label: "All", color: this.accent(), count: null }]
-      .concat(Array.from({ length: gens }, (_, d) => ({ key: d, label: "Gen " + (d + 1), color: GEN[d].color, count: genCounts[d] || 0 })))
+      .concat(Array.from({ length: gens }, (_, d) => ({ key: d, label: "Gen " + (d + 1), color: this.gen(d).color, count: genCounts[d] || 0 })))
       .map(o => ({
         label: o.label, count: o.count, color: o.color,
         active: (o.key === "all") ? (s.genView === "all") : (s.genView === o.key),
@@ -1468,14 +1479,20 @@ function appHeader(V, wide) {
       btn({ onClick: V.onOpenProjection, title: "Full-screen live view for a TV or projector", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:10px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
         h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project"))
     ),
-    // Row 5 — generation filters, scroll sideways (no wrap)
-    h("div", { class: "noscroll", style: "display:flex; gap:6px; align-items:center; overflow-x:auto; padding-bottom:1px" },
-      V.genFilters.map((f, i) => btn({ key: "gf" + i, onClick: f.onPick, title: f.label === "All" ? "Show every generation" : "Show only " + f.label,
-        style: "flex:none; white-space:nowrap; display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.06em; font-weight:700; padding:6px 11px; border-radius:999px; cursor:pointer; border:1.5px solid " + (f.active ? f.color : "#dcd3c4") + "; background:" + (f.active ? f.color : "#f9f4ed") + "; color:" + (f.active ? "#fff2eb" : "#645c50") },
-        f.label === "All" ? null : h("span", { style: "width:14px; height:5px; border-radius:999px; display:block; background:" + (f.active ? "#fff2eb" : f.color) }),
-        h("span", null, f.label.toUpperCase()),
-        f.count != null ? h("span", { style: "opacity:.75" }, "(" + f.count + ")") : null
-      ))
+    // Row 5 — generation filters, scroll sideways (no wrap) with arrows when overflowing
+    h("div", { style: "display:flex; align-items:center; gap:4px" },
+      btn({ id: "gen-arrow-left", onClick: () => { const e = document.getElementById("gen-scroll"); if (e) e.scrollBy({ left: -200, behavior: "smooth" }); }, title: "Scroll generations left", "aria-label": "Scroll left",
+        style: "display:none; flex:none; width:26px; height:26px; align-items:center; justify-content:center; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:16px; line-height:1; cursor:pointer" }, "‹"),
+      h("div", { id: "gen-scroll", class: "noscroll", onScroll: () => App.syncGenArrows(), style: "flex:1; min-width:0; display:flex; gap:6px; align-items:center; overflow-x:auto; padding-bottom:1px" },
+        V.genFilters.map((f, i) => btn({ key: "gf" + i, onClick: f.onPick, title: f.label === "All" ? "Show every generation" : "Show only " + f.label,
+          style: "flex:none; white-space:nowrap; display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.06em; font-weight:700; padding:6px 11px; border-radius:999px; cursor:pointer; border:1.5px solid " + (f.active ? f.color : "#dcd3c4") + "; background:" + (f.active ? f.color : "#f9f4ed") + "; color:" + (f.active ? "#fff2eb" : "#645c50") },
+          f.label === "All" ? null : h("span", { style: "width:14px; height:5px; border-radius:999px; display:block; background:" + (f.active ? "#fff2eb" : f.color) }),
+          h("span", null, f.label.toUpperCase()),
+          f.count != null ? h("span", { style: "opacity:.75" }, "(" + f.count + ")") : null
+        ))
+      ),
+      btn({ id: "gen-arrow-right", onClick: () => { const e = document.getElementById("gen-scroll"); if (e) e.scrollBy({ left: 200, behavior: "smooth" }); }, title: "Scroll generations right", "aria-label": "Scroll right",
+        style: "display:none; flex:none; width:26px; height:26px; align-items:center; justify-content:center; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:16px; line-height:1; cursor:pointer" }, "›")
     )
   );
 }
@@ -2137,6 +2154,7 @@ function upgradeSheet(V) {
   App._mq = window.matchMedia("(min-width: 1000px)");
   App.state.wide = App._mq.matches;
   App._mq.addEventListener("change", e => App.setState({ wide: e.matches }));
+  window.addEventListener("resize", () => App.syncGenArrows());
   App.render();
   if (App.state.step === "app") App.startLive();
 })();
