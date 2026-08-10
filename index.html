@@ -1768,7 +1768,7 @@ function connectSheet(V) {
     h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Relationship"),
     h("div", { style: "display:flex; gap:8px" },
       btn({ onClick: V.onPickConnectType("spouse"), style: seg(V.connectType === "spouse") }, "⚭ Married (no kids together)"),
-      btn({ onClick: V.onPickConnectType("sibling"), style: seg(V.connectType === "sibling") }, "⇄ Siblings")
+      btn({ onClick: V.onPickConnectType("sibling"), style: seg(V.connectType === "sibling") }, "⇄ Siblings without a stated parent")
     ),
     h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a; margin-top:2px" }, "Connect to"),
     V.connectOthers.length
