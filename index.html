@@ -300,6 +300,7 @@ const App = {
     genView: "all",
     viewMode: "list",
     radialSel: null,
+    radialFocus: null,
     collapsed: {},
     selected: null,
     links: [],
@@ -374,9 +375,11 @@ const App = {
 
   /* ---- radial (circular) view — read-only overview ------------------ */
   radialData() {
-    const people = this.state.people, self = this;
+    const people = this.state.people;
     const kidsOf = pid => people.filter(p => (p.parentId || null) === (pid || null));
     const mk = p => ({ id: p.id, name: p.name, short: (p.name || "?").trim().split(/\s+/)[0], c: kidsOf(p.id).map(mk) });
+    const fp = this.state.radialFocus ? people.find(p => p.id === this.state.radialFocus) : null;
+    if (fp) return { id: fp.id, name: fp.name, short: (fp.name || "?").trim().split(/\s+/)[0], focused: true, c: kidsOf(fp.id).map(mk) };
     const fam = this.state.familyName || "Family";
     return { id: "__center", name: fam, short: (fam.split(/\s+/)[0] || "Family"), c: kidsOf(null).map(mk) };
   },
@@ -409,13 +412,14 @@ const App = {
     };
     const selId = this.state.radialSel;
     const selRec = selId ? nodes.find(n => n.node.id === selId) : null;
+    const dimActive = selRec && selRec.depth > 0;   // only fade siblings when an actual wedge is picked
     const lineage = {}; { let cur = selRec; while (cur) { lineage[cur.node.id] = true; cur = cur.parent; } }
     const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     let s = '<svg viewBox="0 0 ' + SIZE + " " + SIZE + '" style="width:100%;height:auto;display:block">';
     for (let i = 0; i < maxD; i++) s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + rOut(i + 1) + '" fill="none" stroke="#dcd3c4" stroke-width="1"/>';
     nodes.filter(n => n.depth > 0).forEach(n => {
       const c = this.gen(n.depth - 1).color;
-      const dim = selRec && !lineage[n.node.id];
+      const dim = dimActive && !lineage[n.node.id];
       const isSel = selRec && selRec.node.id === n.node.id;
       const r0 = rIn(n.depth), r1 = rOut(n.depth), pad = 0.008;
       const [lx, ly] = pol((r0 + r1) / 2, n.mid);
@@ -423,14 +427,20 @@ const App = {
       const arcW = (n.a1 - n.a0) * ((r0 + r1) / 2);
       s += '<g data-node="' + esc(n.node.id) + '" style="cursor:pointer">';
       s += '<path d="' + arc(r0 + 3, r1 - 3, n.a0 + pad, n.a1 - pad) + '" fill="' + c + '" fill-opacity="' + (dim ? 0.16 : isSel ? 1 : 0.82) + '" stroke="#f5ead8" stroke-width="2.5"/>';
-      if (arcW > 34) {
-        const fs = Math.min(16, Math.max(11, arcW / 5));
-        s += '<text x="' + lx + '" y="' + ly + '" transform="rotate(' + (flip ? deg + 180 : deg) + ", " + lx + ", " + ly + ')" text-anchor="middle" dominant-baseline="middle" fill="' + (dim ? "#00000033" : "#fff") + '" style="font-size:' + fs + 'px;font-weight:700;pointer-events:none">' + esc(n.node.short) + "</text>";
+      if (arcW > 26) {
+        const fs = Math.min(15, Math.max(10, arcW / 5));
+        const maxChars = Math.max(1, Math.floor(arcW / (fs * 0.6)));
+        const label = n.node.short.length > maxChars ? n.node.short.slice(0, Math.max(1, maxChars - 1)) + "…" : n.node.short;
+        s += '<text x="' + lx + '" y="' + ly + '" transform="rotate(' + (flip ? deg + 180 : deg) + ", " + lx + ", " + ly + ')" text-anchor="middle" dominant-baseline="middle" fill="' + (dim ? "#00000033" : "#fff") + '" style="font-size:' + fs + 'px;font-weight:700;pointer-events:none">' + esc(label) + "</text>";
       }
       s += "</g>";
     });
+    const focused = !!root.focused;
+    s += '<g' + (focused ? ' data-node="__up" style="cursor:pointer"' : "") + ">";
     s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + R0 + '" fill="' + this.accent() + '"/>';
-    s += '<text x="' + cx + '" y="' + (cy + 5) + '" text-anchor="middle" fill="#fff" style="font-size:17px;font-weight:700;font-family:Caprasimo,serif;pointer-events:none">' + esc(root.short) + "</text>";
+    if (focused) s += '<text x="' + cx + '" y="' + (cy - R0 + 20) + '" text-anchor="middle" fill="#ffffffcc" style="font-size:13px;pointer-events:none">↑ back</text>';
+    s += '<text x="' + cx + '" y="' + (cy + (focused ? 8 : 5)) + '" text-anchor="middle" fill="#fff" style="font-size:' + (root.short.length > 9 ? 14 : 17) + 'px;font-weight:700;font-family:Caprasimo,serif;pointer-events:none">' + esc(root.short) + "</text>";
+    s += "</g>";
     s += "</svg>";
     return s;
   },
@@ -438,7 +448,7 @@ const App = {
     if (this.state.viewMode !== "radial" || this.state.step !== "app") return;
     const host = document.getElementById("radial-host");
     if (!host) return;
-    const sig = this.state.people.map(p => p.id + ":" + (p.parentId || "")).join(",") + "|" + (this.state.radialSel || "") + "|" + this.state.familyName;
+    const sig = this.state.people.map(p => p.id + ":" + (p.parentId || "")).join(",") + "|" + (this.state.radialSel || "") + "|" + (this.state.radialFocus || "") + "|" + this.state.familyName;
     if (host._sig === sig) return;
     host._sig = sig;
     host.innerHTML = this.radialSVG();
@@ -571,7 +581,7 @@ const App = {
     const data = this.loadRoom(room);
     if (data) {
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, toast: null,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null,
         familyName: data.familyName || "", people: data.people || [], feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
         collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
@@ -580,7 +590,7 @@ const App = {
       // brand-new empty board
       const started = { who: this.state.myName || "You", i: this.initials(this.state.myName || "You"), c: "#201e1d", verb: "started", target: "board " + room, kind: "board", when: this.stamp() };
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, toast: null,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null,
         familyName: "", people: [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, links: [], connectFor: null, subscribed: false
       });
     }
@@ -947,6 +957,15 @@ const App = {
         radialDetail = { name: rp.name, meta: meta, path: path.join("  ›  ") };
       }
     }
+    // breadcrumb for the zoomed-in (focused) branch, tappable to jump levels
+    let radialFocusPath = null;
+    if (s.viewMode === "radial" && s.radialFocus) {
+      const byId = id => s.people.find(x => x.id === id);
+      const chain = []; let cur = byId(s.radialFocus);
+      while (cur) { chain.unshift(cur); cur = cur.parentId ? byId(cur.parentId) : null; }
+      radialFocusPath = [{ name: (s.familyName || "Family").split(/\s+/)[0], onJump: () => this.setState({ radialFocus: null, radialSel: null }) }]
+        .concat(chain.map(p => ({ name: p.name.split(/\s+/)[0], onJump: () => this.setState({ radialFocus: p.id, radialSel: p.id }) })));
+    }
     const rows = this.flatten(false);
     const anyMatch = rows.some(r => r.isCard && r.dim === 1);
     const contributors = [
@@ -1117,14 +1136,23 @@ const App = {
       isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
       isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu",
       isRadial: s.viewMode === "radial",
-      onToggleView: () => this.setState({ viewMode: s.viewMode === "radial" ? "list" : "radial", radialSel: null, sheet: null }),
+      onToggleView: () => this.setState({ viewMode: s.viewMode === "radial" ? "list" : "radial", radialSel: null, radialFocus: null, sheet: null }),
       onRadialClick: (e) => {
         const g = e.target && e.target.closest ? e.target.closest("[data-node]") : null;
         const id = g ? g.getAttribute("data-node") : null;
         if (!id) return;
-        this.setState(st => ({ radialSel: st.radialSel === id ? null : id }));
+        if (id === "__up") {
+          const cur = this.state.radialFocus ? this.state.people.find(p => p.id === this.state.radialFocus) : null;
+          const up = cur ? (cur.parentId || null) : null;
+          this.setState({ radialFocus: up, radialSel: up });
+          return;
+        }
+        // Tapping a wedge selects it (detail) and, if it has children, zooms into it.
+        const hasKids = this.state.people.some(p => p.parentId === id);
+        this.setState(st => ({ radialSel: id, radialFocus: hasKids ? id : st.radialFocus }));
       },
       radialDetail: radialDetail,
+      radialFocusPath: radialFocusPath,
       legend2: legend2,
       onOpenMenu: () => this.setState({ sheet: "menu" }),
       onOpenShareMenu: () => this.setState({ sheet: "sharemenu" }),
@@ -1615,7 +1643,13 @@ function appTree(V) {
 function appRadial(V) {
   return h("div", { key: "radial", class: "noscroll", style: "flex:1; min-height:0; overflow:auto; padding:12px 16px 26px; display:flex; flex-direction:column; gap:12px" },
     h("div", { style: "padding:10px 14px; border-radius:16px; background:#fff2eb; border:1.5px solid #f6a06b; font-size:12px; line-height:1.5; color:#8c491a" },
-      "Radial view is a read-only overview — everyone on one screen. Switch to List view (⋮ menu) to add or edit people."),
+      "Read-only overview. Tap a wedge to zoom into that branch (names get bigger); tap the centre to zoom back out. Switch to List view (⋮ menu) to add or edit."),
+    V.radialFocusPath ? h("div", { class: "noscroll", style: "display:flex; align-items:center; gap:4px; flex-wrap:wrap; overflow-x:auto" },
+      V.radialFocusPath.map((seg, i) => [
+        i ? h("span", { key: "sep" + i, style: "color:#c0b6a5; font-size:12px" }, "›") : null,
+        btn({ key: "seg" + i, onClick: seg.onJump, style: "font-size:12px; font-weight:700; padding:5px 11px; border-radius:999px; border:1.5px solid " + (i === V.radialFocusPath.length - 1 ? "#c67139" : "#dcd3c4") + "; background:" + (i === V.radialFocusPath.length - 1 ? "#ffe1d0" : "#f9f4ed") + "; color:#8c491a; cursor:pointer" }, seg.name)
+      ])
+    ) : null,
     h("div", { id: "radial-host", raw: true, onClick: V.onRadialClick, style: "width:100%" }),
     V.radialDetail
       ? h("div", { style: "border-radius:20px; padding:16px 18px; background:#f9f4ed; border:1.5px solid #dcd3c4; display:flex; flex-direction:column; gap:6px" },
