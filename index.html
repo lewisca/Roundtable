@@ -950,7 +950,15 @@ const App = {
       });
     };
     walk(null, 0);
-    return rows;
+    // Collapse consecutive "+ Add another child" dashed rows into one — keep the
+    // deepest (first), which adds a sibling to the card right above it. Higher
+    // ancestors are still reachable via their own + button.
+    const out = [];
+    rows.forEach(r => {
+      if (r.isAdd && out.length && out[out.length - 1].isAdd) return;
+      out.push(r);
+    });
+    return out;
   },
 
   renderVals() {
