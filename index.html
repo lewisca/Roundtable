@@ -599,11 +599,12 @@ const App = {
         collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
       });
     } else {
-      // brand-new empty board
+      // brand-new board — created boards get a 3-generation starter template so
+      // people don't face a blank canvas; joins to an unknown code stay empty.
       const started = { who: this.state.myName || "You", i: this.initials(this.state.myName || "You"), c: "#201e1d", verb: "started", target: "board " + room, kind: "board", when: this.stamp() };
       Object.assign(this.state, {
         room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null,
-        familyName: "", people: [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, links: [], connectFor: null, subscribed: false
+        familyName: "", people: isNew ? this.templatePeople() : [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, links: [], connectFor: null, subscribed: false
       });
     }
     this.startLive();
@@ -692,6 +693,16 @@ const App = {
 
   pushUndo() { this.setState(s => ({ undoStack: s.undoStack.slice(-9).concat([clone(s.people)]) })); },
 
+  // 3-generation starter skeleton for a freshly created board. Each is a
+  // fill-in prompt (placeholder:true) — editable to a real name, or removable.
+  templatePeople() {
+    const by = this.state.myName || "You";
+    return [
+      { id: "tpl-gp", parentId: null, name: "Add a Grandparent", placeholder: true, addedBy: by },
+      { id: "tpl-p", parentId: "tpl-gp", name: "Add a Parent", placeholder: true, addedBy: by },
+      { id: "tpl-me", parentId: "tpl-p", name: "Add Yourself", placeholder: true, addedBy: by }
+    ];
+  },
   openNew(parentId, kind) {
     this.pushUndo();
     this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, editParentOf: null, addKind: kind || null, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
@@ -724,7 +735,7 @@ const App = {
     const partners = this.partnersOf(p).map(pp => ({ name: pp.name || "", born: pp.born || "", died: pp.died || "", place: pp.place || "" }));
     this.setState({
       sheet: "edit", editId: id, editIsNew: false, editParentOf: null, addKind: null,
-      draftName: p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
+      draftName: p.placeholder ? "" : p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
       draftNote: p.note || "", draftPartners: partners, draftCoParent: p.coParent || "",
       draftMore: !!(partners.length || p.born || p.died || p.place || p.note)
     });
@@ -761,7 +772,7 @@ const App = {
           toastText = dup ? name + " added — flagged next to " + dup.name + " for a chat" : name + " is on the tree";
         }
       } else {
-        people = st.people.map(p => p.id === st.editId ? Object.assign({}, p, fields) : p);
+        people = st.people.map(p => { if (p.id !== st.editId) return p; const m = Object.assign({}, p, fields); delete m.placeholder; return m; });
         toastText = "Saved " + name;
       }
       return {
@@ -884,7 +895,8 @@ const App = {
         if (genView === null || depth === genView) {
           rows.push({
             isCard: true, isAdd: false, id: p.id, name: p.name, years: this.years(p),
-            initials: this.initials(p.name), detail: detail,
+            placeholder: !!p.placeholder,
+            initials: p.placeholder ? "＋" : this.initials(p.name), detail: detail,
             partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
             coParent: p.coParent || null,
             childOf: (flat && parentName) ? parentName : null,   // shown only in the generation view
@@ -908,8 +920,8 @@ const App = {
             selected: s.selected === p.id,
             flagged: !!p.flag,
             onFlag: () => this.setState({ sheet: "flag" }),
-            byLine: isFresh ? "just added by " + s.fresh[p.id] : "added by " + (p.addedBy || "someone"),
-            byColor: isFresh ? this.accent() : "#c0b6a5",
+            byLine: p.placeholder ? "tap to fill in" : (isFresh ? "just added by " + s.fresh[p.id] : "added by " + (p.addedBy || "someone")),
+            byColor: p.placeholder ? "#c67139" : (isFresh ? this.accent() : "#c0b6a5"),
             onToggle: () => this.setState(st => ({ collapsed: Object.assign({}, st.collapsed, { [p.id]: !st.collapsed[p.id] }) })),
             onSelect: () => this.setState(st => ({ selected: st.selected === p.id ? null : p.id })),
             onAdd: () => this.openNew(p.id),
@@ -930,7 +942,7 @@ const App = {
               isCard: false, isAdd: true, id: p.id + "-add", pad: indentAt(depth + 1),
               ribLeft: indentAt(depth) + 6, ribW: stub(depth + 1, depth), ribColor: cg.color,
               showRib: true, showSpine: false, dim: 1, color: cg.color,
-              label: "+ Add another child of " + p.name.split(" ")[0],
+              label: p.placeholder ? "+ Add another child here" : "+ Add another child of " + p.name.split(" ")[0],
               onAdd: () => this.openNew(p.id, "child")
             });
           }
@@ -943,7 +955,9 @@ const App = {
 
   renderVals() {
     const s = this.state;
-    const total = s.people.length + s.people.reduce((n, p) => n + this.partnersOf(p).filter(pp => pp.name).length, 0);
+    const realPeople = s.people.filter(p => !p.placeholder);   // starter-template prompts don't count as real people
+    const anyPlaceholder = realPeople.length !== s.people.length;
+    const total = realPeople.length + realPeople.reduce((n, p) => n + this.partnersOf(p).filter(pp => pp.name).length, 0);
     const gens = s.people.reduce((m, p) => Math.max(m, this.depthOf(p) + 1), 1);
     const genCounts = [];
     s.people.forEach(p => { const d = this.depthOf(p); genCounts[d] = (genCounts[d] || 0) + 1; });
@@ -1066,7 +1080,7 @@ const App = {
       onFamilyName: e => this.setState({ familyName: e.target.value }),
       countLine: (typeof s.genView === "number")
         ? ("Generation " + (s.genView + 1) + " · " + (genCounts[s.genView] || 0) + " " + ((genCounts[s.genView] || 0) === 1 ? "person" : "people"))
-        : (total + " people · " + gens + " gens"),
+        : (total === 0 && anyPlaceholder ? "Tap a prompt below to start your tree" : (total + " people · " + gens + " gens")),
       peopleCount: total,
       genFilters: genFilters,
       gensCount: gens,
@@ -1686,7 +1700,7 @@ function row(r) {
         h("span", { style: "flex:none; width:44px; height:44px; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
         h("span", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:5px" },
           h("span", { style: "display:flex; align-items:baseline; gap:8px; flex-wrap:wrap" },
-            h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; color:#201e1d; overflow-wrap:anywhere; min-width:0" }, r.name),
+            h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; overflow-wrap:anywhere; min-width:0; " + (r.placeholder ? "color:#a99a86; font-style:italic" : "color:#201e1d") }, r.name),
             h("span", { style: "font-size:12px; color:#82796a" }, r.years)
           ),
           r.childOf ? h("span", { style: "align-self:flex-start; display:flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; background:" + r.soft + "; font-size:11px; font-weight:700; color:" + r.color },
