@@ -467,10 +467,12 @@ const App = {
   /* ---- persistence -------------------------------------------------- */
   persist() {
     const s = this.state;
-    if (s.step !== "app") { localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, myName: s.myName })); return; }
+    if (s.step !== "app") { try { localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, myName: s.myName })); } catch (e) {} return; }
     const snap = this.boardSnapshot();
-    try { localStorage.setItem(STORE_PREFIX + s.room, JSON.stringify(snap)); } catch (e) {}
-    localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName }));
+    try {
+      localStorage.setItem(STORE_PREFIX + s.room, JSON.stringify(snap));
+      localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName }));
+    } catch (e) {}
     this.saveRemote(s.room, snap);
   },
 
@@ -1425,37 +1427,28 @@ function view(V) {
 }
 
 function viewLanding(V) {
-  return h("div", { key: "landing", style: "flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; padding:24px 24px 22px; gap:15px", class: "noscroll" },
+  return h("div", { key: "landing", style: "flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; padding:28px 24px 26px; gap:20px", class: "noscroll" },
     h("div", { style: "display:flex; align-items:center; gap:12px" },
-      h("div", { style: "width:52px; height:52px; border-radius:999px; background:#c67139; display:flex; align-items:center; justify-content:center; color:#fff2eb; font-family:Caprasimo, serif; font-size:24px" }, "R"),
-      h("div", { style: "font-family:Caprasimo, serif; font-size:24px; letter-spacing:-.01em" }, "Roundtable")
+      h("div", { style: "width:54px; height:54px; border-radius:999px; background:#c67139; display:flex; align-items:center; justify-content:center; color:#fff2eb; font-family:Caprasimo, serif; font-size:26px" }, "R"),
+      h("div", { style: "font-family:Caprasimo, serif; font-size:27px; letter-spacing:-.01em" }, "Roundtable")
     ),
-    h("div", { style: "display:flex; flex-direction:column; gap:12px" },
-      h("div", { style: "font-family:Caprasimo, serif; font-size:30px; line-height:1.06; text-wrap:pretty" }, "The family tree you build together, and keep adding to."),
-      h("div", { style: "font-size:14px; line-height:1.5; color:#645c50; text-wrap:pretty" }, "Share one board code. Everyone fills in the branch they know best, and the tree keeps growing — new babies, new marriages, years later.")
+    h("div", { style: "display:flex; flex-direction:column; gap:14px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:38px; line-height:1.05; text-wrap:pretty" }, "The family tree you build together, and keep adding to."),
+      h("div", { style: "font-size:17px; line-height:1.55; color:#645c50; text-wrap:pretty" }, "Share one board code. Everyone fills in the branch they know best, and the tree keeps growing — new babies, new marriages, years later.")
     ),
-    h("div", { style: "display:flex; flex-direction:column; gap:10px" },
-      V.beats.map((b, i) => h("div", { key: "beat" + i, style: "display:flex; align-items:flex-start; gap:11px; padding:11px 14px; border-radius:20px; background:#ebddc5" },
-        h("span", { style: "width:24px; height:24px; flex:none; border-radius:999px; background:" + b.c + "; color:#fff2eb; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center" }, b.n),
-        h("span", { style: "display:flex; flex-direction:column; gap:1px" },
-          h("span", { style: "font-size:14px; font-weight:800" }, b.title),
-          h("span", { style: "font-size:12px; line-height:1.4; color:#645c50" }, b.body)
+    h("div", { style: "display:flex; flex-direction:column; gap:11px" },
+      btn({ onClick: V.onStartNow, style: "font-size:19px; font-weight:800; padding:19px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.2)", hover: "background:#b2622d" }, "Create free family tree"),
+      btn({ onClick: V.onLandingJoin, style: "font-size:16px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "I have a board code"),
+      h("div", { style: "font-size:13px; line-height:1.5; color:#82796a; text-align:center" }, "Free to start. No accounts, no subscriptions.")
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:11px" },
+      V.beats.map((b, i) => h("div", { key: "beat" + i, style: "display:flex; align-items:flex-start; gap:13px; padding:14px 16px; border-radius:20px; background:#ebddc5" },
+        h("span", { style: "width:28px; height:28px; flex:none; border-radius:999px; background:" + b.c + "; color:#fff2eb; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, b.n),
+        h("span", { style: "display:flex; flex-direction:column; gap:2px" },
+          h("span", { style: "font-size:16px; font-weight:800" }, b.title),
+          h("span", { style: "font-size:14px; line-height:1.45; color:#645c50" }, b.body)
         )
       ))
-    ),
-    h("div", { style: "flex:1 1 10px; min-height:10px" }),
-    h("div", { style: "display:flex; flex-direction:column; gap:6px; flex:none" },
-      h("video", {
-        src: "assets/how-roundtable-works.mp4",
-        controls: true, preload: "metadata", playsinline: true,
-        style: "display:block; margin:0 auto; max-height:380px; max-width:100%; width:auto; border-radius:20px; border:1.5px solid #dcd3c4; background:#000"
-      }),
-      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#82796a; text-align:center" }, "how a board works")
-    ),
-    h("div", { style: "display:flex; flex-direction:column; gap:9px; padding-top:4px" },
-      btn({ onClick: V.onStartNow, style: "font-size:17px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.2)", hover: "background:#b2622d" }, "Start now"),
-      btn({ onClick: V.onLandingJoin, style: "font-size:13px; font-weight:700; padding:12px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "I have a board code"),
-      h("div", { style: "font-size:12px; line-height:1.5; color:#82796a; text-align:center" }, "Free for the afternoon. No accounts, no subscriptions.")
     )
   );
 }
@@ -2296,11 +2289,14 @@ function upgradeSheet(V) {
 (function () {
   App._root = document.getElementById("device");
   // seed the sample board once so first-time visitors can explore it
-  if (!localStorage.getItem(STORE_PREFIX + DEMO_ROOM)) {
-    localStorage.setItem(STORE_PREFIX + DEMO_ROOM, JSON.stringify({
-      familyName: SEED.familyName, people: SEED.people, feed: SEED.feed, log: SEED.log, thread: SEED.thread, fresh: {}, collapsed: {}, subscribed: false
-    }));
-  }
+  // (guarded: localStorage can throw in private mode / when storage is disabled)
+  try {
+    if (!localStorage.getItem(STORE_PREFIX + DEMO_ROOM)) {
+      localStorage.setItem(STORE_PREFIX + DEMO_ROOM, JSON.stringify({
+        familyName: SEED.familyName, people: SEED.people, feed: SEED.feed, log: SEED.log, thread: SEED.thread, fresh: {}, collapsed: {}, subscribed: false
+      }));
+    }
+  } catch (e) {}
   // deep link from an emailed / shared board link: ?board=CODE
   let deepCode = "";
   try {
