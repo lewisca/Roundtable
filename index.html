@@ -328,7 +328,7 @@ const App = {
     log: clone(SEED.log),
     undoStack: [],
     logFilter: "all",
-    payEmail: "", payCard: "", payExp: "", payCvc: "", payName: "", payError: null,
+    payEmail: "", payCard: "", payExp: "", payCvc: "", payName: "", payError: null, payBusy: false,
     subscribed: false, expiresAt: null, paidUntil: null, ownerEmail: null
   },
 
@@ -1217,14 +1217,19 @@ const App = {
       onPayExp: e => this.setState({ payExp: e.target.value }),
       onPayCvc: e => this.setState({ payCvc: e.target.value }),
       onPayName: e => this.setState({ payName: e.target.value }),
-      onSubscribe: () => {
-        if (s.payEmail.indexOf("@") < 1) { this.setState({ payError: "We need an email address to send the link to." }); return; }
-        if (s.payCard.replace(/\D/g, "").length < 12) { this.setState({ payError: "That card number looks short." }); return; }
-        this.setState(st => ({
-          sheet: null, payError: null, subscribed: true,
-          log: this.logEntry(st, "kept", "the board live for a year", "board", "link emailed to " + st.payEmail),
-          toast: { text: "Your link is live — sent to " + st.payEmail, i: "✓", c: "#7a8a5e" }
-        }), () => this.flashToast());
+      payBusy: s.payBusy,
+      onSubscribe: async () => {
+        if (!sb) { this.setState({ payError: "You need to be online to upgrade." }); return; }
+        this.setState({ payError: null, payBusy: true });
+        try {
+          const { data, error } = await sb.functions.invoke("create-checkout", { body: { code: s.room } });
+          if (error) throw error;
+          if (data && data.error) throw new Error(data.error);
+          if (data && data.url) { window.location.href = data.url; return; }  // -> Stripe hosted Checkout
+          throw new Error("no url");
+        } catch (e) {
+          this.setState({ payBusy: false, payError: "Couldn't start secure checkout — payments may not be set up yet. Please try again shortly." });
+        }
       },
       editTitle: s.editIsNew ? (s.addKind === "child" ? "Add a child" : s.addKind === "parent" ? "Add a parent" : s.addKind === "sibling" ? "Add a sibling" : "Add a person") : "Edit person",
       editSub: s.editIsNew ? "A name is all we need. Details any time later." : "Everyone on the board sees the change.",
@@ -2270,17 +2275,6 @@ function upgradeSheet(V) {
             h("span", { style: "font-size:13px; line-height:1.45; color:#201e1d" }, p)
           ))
         ),
-        h("div", { style: "display:flex; flex-direction:column; gap:10px" },
-          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Where the link goes"),
-          inp({ value: V.payEmail, onChange: V.onPayEmail, placeholder: "you@email.com", style: "font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a; margin-top:4px" }, "Card"),
-          inp({ value: V.payCard, onChange: V.onPayCard, placeholder: "Card number", style: "font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-          h("div", { style: "display:flex; gap:10px" },
-            inp({ value: V.payExp, onChange: V.onPayExp, placeholder: "MM / YY", style: "flex:1; min-width:0; font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-            inp({ value: V.payCvc, onChange: V.onPayCvc, placeholder: "CVC", style: "flex:1; min-width:0; font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
-          ),
-          inp({ value: V.payName, onChange: V.onPayName, placeholder: "Name on card", style: "font-size:16px; padding:15px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" })
-        ),
         h("div", { style: "display:flex; align-items:baseline; justify-content:space-between; padding:14px 18px; border-radius:20px; background:#ebddc5" },
           h("div", { style: "font-size:13px; font-weight:700; color:#645c50" }, "Roundtable, one family"),
           h("div", { style: "display:flex; align-items:baseline; gap:5px" },
@@ -2289,9 +2283,11 @@ function upgradeSheet(V) {
           )
         ),
         V.payError ? h("div", { style: "font-size:13px; font-weight:700; color:#8c491a" }, V.payError) : null,
-        btn({ onClick: V.onSubscribe, style: "font-size:16px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Keep it live — $19.99 a year"),
+        btn({ onClick: V.payBusy ? null : V.onSubscribe, style: "font-size:16px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; opacity:" + (V.payBusy ? ".7" : "1"), hover: "background:#b2622d" }, V.payBusy ? "Opening secure checkout…" : "Keep it live — $19.99 a year"),
         btn({ onClick: V.onCloseSheet, style: "font-size:14px; font-weight:700; padding:14px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Not now — let it expire in 3 days"),
-        h("div", { style: "font-size:11px; line-height:1.5; color:#82796a; text-align:center" }, "Cancel any time. The PDF and image downloads stay free either way.")
+        h("div", { style: "display:flex; align-items:center; justify-content:center; gap:6px; font-size:11px; line-height:1.5; color:#82796a; text-align:center" },
+          h("span", { style: "font-size:12px" }, "🔒"),
+          h("span", null, "Secure checkout by Stripe. Cancel any time. Downloads stay free either way."))
       );
 
   return h("div", { key: "sheet-up", style: SHEET + "; max-height:92%; gap:14px", class: "noscroll" },
@@ -2319,11 +2315,12 @@ function upgradeSheet(V) {
       }));
     }
   } catch (e) {}
-  // deep link from an emailed / shared board link: ?board=CODE
-  let deepCode = "";
+  // deep link from an emailed / shared board link: ?board=CODE (&paid=1 after Stripe)
+  let deepCode = "", justPaid = false;
   try {
     const params = new URLSearchParams(location.search);
     deepCode = (params.get("board") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    justPaid = params.get("paid") === "1";
   } catch (e) {}
   // resume last session (or open the deep-linked board)
   try {
@@ -2350,6 +2347,13 @@ function upgradeSheet(V) {
   window.addEventListener("resize", () => App.syncGenArrows());
   App.render();
   if (App.state.step === "app") App.startLive();
+  // Returned from Stripe Checkout: confirm, and let the webhook + realtime flip is_paid.
+  if (justPaid) {
+    try { history.replaceState({}, "", location.pathname + "?board=" + encodeURIComponent(deepCode || App.state.room)); } catch (e) {}
+    App.state.toast = { text: "Payment received — activating your board. It stays live for a year.", i: "✓", c: "#7a8a5e" };
+    App.render();
+    App.flashToast();
+  }
 })();
 </script>
 </body>
