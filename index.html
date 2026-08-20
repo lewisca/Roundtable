@@ -290,6 +290,7 @@ const App = {
     room: DEMO_ROOM,
     shared: true,
     myName: "",
+    contact: "",
     nameError: null,
     familyName: SEED.familyName,
     zoom: 1,
@@ -467,11 +468,11 @@ const App = {
   /* ---- persistence -------------------------------------------------- */
   persist() {
     const s = this.state;
-    if (s.step !== "app") { try { localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, myName: s.myName })); } catch (e) {} return; }
+    if (s.step !== "app") { try { localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, myName: s.myName, contact: s.contact })); } catch (e) {} return; }
     const snap = this.boardSnapshot();
     try {
       localStorage.setItem(STORE_PREFIX + s.room, JSON.stringify(snap));
-      localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName }));
+      localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName, contact: s.contact }));
     } catch (e) {}
     this.saveRemote(s.room, snap);
   },
@@ -717,6 +718,16 @@ const App = {
   },
   // The + button on a card opens a small menu to add a child, parent, or sibling.
   openAddMenu(id) { this.setState({ sheet: "add", addForId: id, selected: id }); },
+  // Optional: email/text the board code + expiry to the person on create/join.
+  // Best-effort — needs the `notify-board` Edge Function deployed (see README).
+  async notifyBoard(code, contact) {
+    const c = (contact || "").trim();
+    if (!sb || !c) return;
+    try {
+      const { error } = await sb.functions.invoke("notify-board", { body: { code, contact: c } });
+      if (!error) this.setState({ toast: { text: "Board code sent to " + c, i: "✉", c: this.accent() } }, () => this.flashToast());
+    } catch (e) {}
+  },
   // Adding a parent when the person has siblings: choose who the parent belongs to.
   openParentPick(id) { this.setState({ sheet: "parentpick", parentPickFor: id, parentPickSel: { [id]: true } }); },
   confirmParentPick() {
@@ -1075,11 +1086,15 @@ const App = {
       onCodeInput: e => this.setState({ codeInput: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8), codeError: null }),
       onHaveCode: () => this.setState({ joining: true }),
       onNewBoard: () => this.setState({ joining: false, room: this.newCode() }),
-      onStartBoard: () => this.enterRoom(s.room, true),
+      contact: s.contact,
+      onContact: e => this.setState({ contact: e.target.value }),
+      onStartBoard: () => { const c = s.contact; this.enterRoom(s.room, true); this.notifyBoard(s.room, c); },
       onJoinBoard: () => {
         const code = s.codeInput.trim();
         if (code.length < 4) { this.setState({ codeError: "Board codes are six characters — check the one you were sent." }); return; }
+        const c = s.contact;
         this.enterRoom(code, false);
+        this.notifyBoard(code, c);
       },
       codeError: s.codeError,
       room: s.room, shared: s.shared,
@@ -1522,6 +1537,12 @@ function viewBoard(V) {
             btn({ onClick: V.onStartBoard, style: "font-size:16px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer" }, "Create board"),
             btn({ onClick: V.onHaveCode, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "I have a code already")
           ),
+      h("div", { style: "height:1px; background:#e6ddcc" }),
+      h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+        h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Email or phone — optional"),
+        inp({ value: V.contact, onChange: V.onContact, placeholder: "you@email.com  or  (555) 123-4567", style: "font-size:15px; padding:14px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+        h("div", { style: "font-size:12px; line-height:1.45; color:#645c50" }, "We'll text or email you the code so you don't have to memorize it — with a reminder that a free board expires 72 hours after it's created. Optional.")
+      ),
       h("div", { style: "padding:14px 16px; border-radius:20px; background:#f0fae1; font-size:13px; line-height:1.5; color:#3d472b" }, "A board code is a doorway, not a lock. Anyone who types it can read and change these names. Treat it like a poster in the reunion hall.")
     ),
     h("div", { style: "font-size:12px; line-height:1.5; color:#82796a; text-align:center" }, "Tip: join code ", h("strong", null, DEMO_ROOM), " to explore the sample family.")
@@ -2326,6 +2347,7 @@ function upgradeSheet(V) {
   try {
     const sess = JSON.parse(localStorage.getItem("roundtable:session") || "null");
     if (sess && sess.myName) App.state.myName = sess.myName;
+    if (sess && sess.contact) App.state.contact = sess.contact;
     if (deepCode) {
       if (App.state.myName) {
         App.state.step = "landing";

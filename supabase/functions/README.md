@@ -103,3 +103,43 @@ with `?paid=1`; within a couple of seconds the webhook flips `is_paid` and the
 - **Cancellation** clears `is_paid`; the board then lives until `expires_at` and
   goes dark after, exactly like a free board.
 - The purchaser's email is stored as `owner_email` (receipt + link recipient).
+
+---
+
+# `notify-board` — email/text the code + expiry (optional)
+
+On the create/join screen a person can enter an **optional** email or phone.
+When they create or join, the app calls this function, which emails (Resend) or
+texts (Twilio) them the board code, the link, and when it expires (the 72-hour
+rule, or the renew date if paid). It's best-effort — if the relevant provider
+isn't configured it returns 501 and the app silently ignores it.
+
+### Providers (set the ones you want)
+
+**Email — Resend**
+1. Create a Resend account, verify your sending domain, get an API key.
+2. Set secrets:
+   ```bash
+   supabase secrets set \
+     RESEND_API_KEY=re_xxx \
+     RESEND_FROM="Roundtable <hello@famroundtable.com>" \
+     SITE_URL=https://famroundtable.com
+   ```
+
+**Text — Twilio** (SMS needs a Twilio number + A2P/10DLC registration and
+recipient consent, per carrier rules)
+```bash
+supabase secrets set \
+  TWILIO_ACCOUNT_SID=ACxxx \
+  TWILIO_AUTH_TOKEN=xxx \
+  TWILIO_FROM=+1xxxxxxxxxx
+```
+
+### Deploy
+```bash
+supabase functions deploy notify-board
+```
+(Keep JWT verification on — the app calls it with the anon key.)
+
+Until it's deployed, the field still works and is saved; the app just doesn't
+send anything (no error shown to the user).
