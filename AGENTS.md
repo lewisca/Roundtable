@@ -17,8 +17,11 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 - **Identity:** none — the app has **no accounts** (name + shareable board code
   only). Events use Mixpanel's anonymous device id. **Do not** call
   `identify()` / `people.set()` / create profiles.
-- **Consent:** no gate (US default). Add a consent gate before `mixpanel.init`
-  if EU/California users are targeted.
+- **Consent:** opt-in gate. Mixpanel inits with `opt_out_tracking_by_default:true`;
+  a bottom banner (`consentBanner` in `index.html`, shown when `state.consent===null`)
+  asks consent. Accept → `opt_in_tracking()`, Decline → stays opted out. Choice is
+  stored in `localStorage["roundtable:consent"]` and restored on boot via
+  `applyConsent()`. No events send before consent.
 - **Helper:** `track(name, props)` in `index.html` — safe no-op if the lib is
   blocked. Use snake_case event names, lowercase string values, unquoted numbers.
 
