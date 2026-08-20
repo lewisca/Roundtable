@@ -86,8 +86,22 @@
 <div id="stage"><div id="device"></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Mixpanel (analytics). Anonymous device-id tracking; no accounts/PII. -->
+<script type="text/javascript">
+window.MIXPANEL_CUSTOM_LIB_URL = "https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";
+(function(f,b){if(!b.__SV){var e,g,i,h;window.mixpanel=b;b._i=[];b.init=function(e,f,c){function g(a,d){var b=d.split(".");2==b.length&&(a=a[b[0]],d=b[1]);a[d]=function(){a.push([d].concat(Array.prototype.slice.call(arguments,0)))}}var a=b;"undefined"!==typeof c?a=b[c]=[]:c="mixpanel";a.people=a.people||[];a.toString=function(a){var d="mixpanel";"mixpanel"!==c&&(d+="."+c);a||(d+=" (stub)");return d};a.people.toString=function(){return a.toString(1)+".people (stub)"};i="disable time_event track track_pageview track_links track_forms track_with_groups add_group set_group remove_group register register_once alias unregister identify name_tag set_config reset opt_in_tracking opt_out_tracking has_opted_in_tracking has_opted_out_tracking clear_opt_in_out_tracking start_batch_senders people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user people.remove".split(" ");for(h=0;h<i.length;h++)g(a,i[h]);var j="set set_once union unset remove delete".split(" ");a.get_group=function(){function b(c){d[c]=function(){call2_args=arguments;call2=[c].concat(Array.prototype.slice.call(call2_args,0));a.push([e,call2])}}for(var d={},e=["get_group"].concat(Array.prototype.slice.call(arguments,0)),c=0;c<j.length;c++)b(j[c]);return d};b._i.push([e,f,c])};b.__SV=1.2;e=f.createElement("script");e.type="text/javascript";e.async=!0;e.src="undefined"!==typeof MIXPANEL_CUSTOM_LIB_URL?MIXPANEL_CUSTOM_LIB_URL:"file:"===f.location.protocol&&"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js".match(/^\/\//)?"https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js":"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";g=f.getElementsByTagName("script")[0];g.parentNode.insertBefore(e,g)}})(document,window.mixpanel||[]);
+mixpanel.init("d913ed494b93028d5727ddb5f8bf970f", { track_pageview: false, persistence: "localStorage", cross_subdomain_cookie: false, disable_cookie: true });
+mixpanel.register({ platform: "web", app: "roundtable" });
+</script>
 <script>
 "use strict";
+
+// Mixpanel event helper — safe no-op if the library is blocked/unavailable.
+// snake_case names, lowercase string values, numeric values unquoted.
+function track(name, props) {
+  try { if (window.mixpanel && window.mixpanel.track) window.mixpanel.track(name, props || {}); } catch (e) {}
+}
+
 /* =========================================================================
    Roundtable — a collaborative family-reunion tree.
    Implemented from the "Family Reunion Tree v2" design concept.
@@ -795,6 +809,11 @@ const App = {
       };
     });
     this.flashToast();
+    if (s.editIsNew) {   // VALUE MOMENT: a relative was added to the tree
+      const kidIds = Array.isArray(s.editParentOf) ? s.editParentOf : (s.editParentOf ? [s.editParentOf] : []);
+      const relation = kidIds.length ? "parent" : (s.addKind || (s.editParent ? "child" : "root"));
+      track("person_added", { relation: relation, has_partner: partners.length > 0, demo: s.room === DEMO_ROOM });
+    }
   },
   clock() { const d = new Date(); let hh = d.getHours() % 12 || 12; return hh + ":" + String(d.getMinutes()).padStart(2, "0"); },
   removePerson(mode) {
@@ -831,6 +850,7 @@ const App = {
       }));
     }
     this.flashToast();
+    track("person_removed", { mode: mode === "one" ? "one" : "subtree" });
   },
   descendants(id, out) {
     out = out || [];
@@ -1088,13 +1108,14 @@ const App = {
       onNewBoard: () => this.setState({ joining: false, room: this.newCode() }),
       contact: s.contact,
       onContact: e => this.setState({ contact: e.target.value }),
-      onStartBoard: () => { const c = s.contact; this.enterRoom(s.room, true); this.notifyBoard(s.room, c); },
+      onStartBoard: () => { const c = s.contact; this.enterRoom(s.room, true); this.notifyBoard(s.room, c); track("board_created", { has_contact: !!(c && c.trim()) }); },
       onJoinBoard: () => {
         const code = s.codeInput.trim();
         if (code.length < 4) { this.setState({ codeError: "Board codes are six characters — check the one you were sent." }); return; }
         const c = s.contact;
         this.enterRoom(code, false);
         this.notifyBoard(code, c);
+        track("board_joined", { via: "code_entry", has_contact: !!(c && c.trim()) });
       },
       codeError: s.codeError,
       room: s.room, shared: s.shared,
@@ -1110,7 +1131,7 @@ const App = {
       hereLabel: (s.room === DEMO_ROOM ? "5 here" : (s.hereCount + " here")),
       wide: s.wide,
       isProjection: s.projection,
-      onOpenProjection: () => this.setState({ projection: true, sheet: null, selected: null }),
+      onOpenProjection: () => { this.setState({ projection: true, sheet: null, selected: null }); track("projection_opened", {}); },
       onExitProjection: () => this.setState({ projection: false }),
       bigRows: this.flatten(true),
       bigLog: s.log.slice(0, 14).map(l => ({ who: l.who, i: l.i, c: l.c, verb: l.verb, target: l.target, when: l.when, verbColor: l.kind === "remove" ? "#8c491a" : (l.kind === "add" ? "#56633f" : "#645c50") })),
@@ -1185,7 +1206,7 @@ const App = {
       isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
       isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu",
       isRadial: s.viewMode === "radial",
-      onToggleView: () => this.setState({ viewMode: s.viewMode === "radial" ? "list" : "radial", radialSel: null, radialFocus: null, sheet: null }),
+      onToggleView: () => { const next = s.viewMode === "radial" ? "list" : "radial"; this.setState({ viewMode: next, radialSel: null, radialFocus: null, sheet: null }); track("view_changed", { view: next }); },
       onRadialClick: (e) => {
         const g = e.target && e.target.closest ? e.target.closest("[data-node]") : null;
         const id = g ? g.getAttribute("data-node") : null;
@@ -1206,11 +1227,11 @@ const App = {
       onOpenMenu: () => this.setState({ sheet: "menu" }),
       onOpenShareMenu: () => this.setState({ sheet: "sharemenu" }),
       onOpenBoard: () => this.setState({ sheet: "board" }),
-      onOpenShare: () => this.setState({ sheet: "share" }),
+      onOpenShare: () => { this.setState({ sheet: "share" }); track("board_share_opened", {}); },
       onOpenDownload: () => this.setState({ sheet: "download" }),
       onOpenUpgrade: () => this.setState({ sheet: "upgrade", payError: null }),
-      onDownloadPdf: () => this.downloadTree("pdf", total),
-      onDownloadImage: () => this.downloadImage(total),
+      onDownloadPdf: () => { this.downloadTree("pdf", total); track("tree_downloaded", { format: "pdf" }); },
+      onDownloadImage: () => { this.downloadImage(total); track("tree_downloaded", { format: "image" }); },
       expiryDate: s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(3),
       renewDate: s.paidUntil ? this.fmtDate(s.paidUntil) : (s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(365)),
       isPaid: s.subscribed, isUnpaid: !s.subscribed,
@@ -1234,6 +1255,7 @@ const App = {
       onPayName: e => this.setState({ payName: e.target.value }),
       payBusy: s.payBusy,
       onSubscribe: async () => {
+        track("upgrade_started", {});
         if (!sb) { this.setState({ payError: "You need to be online to upgrade." }); return; }
         this.setState({ payError: null, payBusy: true });
         try {
@@ -2352,6 +2374,7 @@ function upgradeSheet(V) {
       if (App.state.myName) {
         App.state.step = "landing";
         App.enterRoom(deepCode, false);        // known visitor -> straight into the board
+        track("board_joined", { via: "link" });
       } else {
         App._deepLinkCode = deepCode;          // ask their name first, then open it
         App.state.step = "name";
@@ -2375,6 +2398,7 @@ function upgradeSheet(V) {
     App.state.toast = { text: "Payment received — activating your board. It stays live for a year.", i: "✓", c: "#7a8a5e" };
     App.render();
     App.flashToast();
+    track("upgrade_completed", {});
   }
 })();
 </script>
