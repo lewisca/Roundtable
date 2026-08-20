@@ -13,7 +13,10 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 - **Token location:** hardcoded in the `mixpanel.init(...)` call in `index.html`
   (single production token). No dev/prod split yet.
 - **Config:** `track_pageview:false`, `persistence:"localStorage"`,
-  `disable_cookie:true` (cookie-free), super-props `platform:web`, `app:roundtable`.
+  `disable_cookie:true` (cookie-free), super-props `platform:web`, `app:roundtable`,
+  `device_type` (mobile/tablet/desktop, from initial viewport width). Mixpanel also
+  auto-captures `$os`/`$device`/`$browser`/`$screen_*` — mobile web is fully tracked
+  (no native SDK; this isn't a native app).
 - **Identity:** none — the app has **no accounts** (name + shareable board code
   only). Events use Mixpanel's anonymous device id. **Do not** call
   `identify()` / `people.set()` / create profiles.
