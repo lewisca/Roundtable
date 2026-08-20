@@ -1,11 +1,15 @@
 # Roundtable — payments (Stripe + Supabase Edge Functions)
 
-Turns the "Keep it live — $19.99/yr" button into a real subscription. Card
-details are collected on Stripe's hosted Checkout page — they never touch the
-app or the database. The board only flips to paid via the signed webhook.
+Turns the "Keep it live — $19.99/yr" button into a real subscription using
+**Stripe Managed Payments** (Stripe is merchant of record and handles tax via the
+product's tax code). Card details are collected on Stripe's hosted Checkout page —
+they never touch the app or the database. The board only flips to paid via the
+signed webhook. Uses the preview API version **`2026-02-25.preview`**.
 
-Two functions:
-- `create-checkout` — the app calls it; returns a Stripe Checkout URL.
+Two functions + a one-time product setup:
+- `setup/create-product.mjs` — run once; creates the product + yearly price.
+- `create-checkout` — the app calls it; returns a Stripe Checkout URL
+  (`managed_payments[enabled]=true`).
 - `stripe-webhook` — Stripe calls it after payment; flips the board to paid.
 
 ---
@@ -52,11 +56,20 @@ before update on public.boards
 for each row execute function public.guard_board_billing();
 ```
 
-## 2. Stripe — create the product
+## 2. Stripe — create the product (managed payments)
 
-1. Stripe Dashboard → **Products** → add product "Roundtable — one family".
-2. Add a **recurring** price: **$19.99 / year**. Copy the **price ID** (`price_…`).
-3. Grab your **secret key** (`sk_live_…` or `sk_test_…`) from Developers → API keys.
+Grab your **secret key** (`sk_test_…` to start) from Stripe → Developers → API keys,
+then create the product + yearly price by running the setup script once — it
+creates a product with the digital tax code `txcd_10103100` and a $19.99/year
+recurring price, and prints the **price ID**:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_xxx node setup/create-product.mjs
+# -> ✅ Yearly price: price_xxx   (use this as STRIPE_PRICE_ID below)
+```
+
+(You can also create the product in the Dashboard, but the script sets the tax
+code + preview version for you.)
 
 ## 3. Set the function secrets
 

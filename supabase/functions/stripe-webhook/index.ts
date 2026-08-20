@@ -11,7 +11,7 @@ import Stripe from "https://esm.sh/stripe@16.2.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
-  apiVersion: "2024-06-20",
+  apiVersion: "2026-02-25.preview" as any,   // Managed Payments preview version
   httpClient: Stripe.createFetchHttpClient(),
 });
 const WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET")!;
