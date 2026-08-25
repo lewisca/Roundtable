@@ -24,6 +24,17 @@ const admin = createClient(
 
 const inAYear = () => new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
 
+// The top-level `invoice.subscription` field was removed in API 2025-03-31.basil+
+// (we're on 2026-02-25.preview). Read it from wherever this version puts it.
+// deno-lint-ignore no-explicit-any
+function subIdFromInvoice(inv: any): string | null {
+  const direct = typeof inv?.subscription === "string" ? inv.subscription : inv?.subscription?.id;
+  const fromParent = inv?.parent?.subscription_details?.subscription;
+  const fromLine = inv?.lines?.data?.find((l: any) => l?.subscription)?.subscription;
+  const s = direct || fromParent || fromLine || null;
+  return typeof s === "string" ? s : (s?.id ?? null);
+}
+
 Deno.serve(async (req) => {
   const sig = req.headers.get("stripe-signature");
   const raw = await req.text();
@@ -57,7 +68,7 @@ Deno.serve(async (req) => {
       // Yearly renewals: push expiry out another year.
       case "invoice.paid": {
         const inv = event.data.object as Stripe.Invoice;
-        const subId = typeof inv.subscription === "string" ? inv.subscription : inv.subscription?.id;
+        const subId = subIdFromInvoice(inv);
         if (subId) {
           await admin.from("boards").update({
             is_paid: true, paid_until: inAYear(), expires_at: inAYear(),
