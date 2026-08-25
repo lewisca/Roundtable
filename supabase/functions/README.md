@@ -156,3 +156,39 @@ supabase functions deploy notify-board
 
 Until it's deployed, the field still works and is saved; the app just doesn't
 send anything (no error shown to the user).
+
+---
+
+# `family-agent` — the tree assistant (optional)
+
+The "✨ Assistant" in the board menu drafts an **obituary** or a **seating chart**,
+or **answers questions** about the family — but only from the tree on that board.
+The model does two things only: read the person's intent, and format the output.
+Every fact comes from deterministic, board-scoped tools (`family_overview`,
+`find_person`, `get_relatives`, `find_conflicts`, …); the model is told it may
+never invent a name, date, or relationship. So it can't hallucinate a relative
+into someone's obituary — if it isn't in the tree, it isn't in the draft.
+
+The Anthropic API key lives only in this function (never in the static client).
+The app calls it with the anon key and the board **code**; the function loads
+that board's tree with the service_role key and runs the agent against it.
+
+### Set the secret
+
+```bash
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-xxx
+# optional — defaults to claude-sonnet-5:
+supabase secrets set AGENT_MODEL=claude-sonnet-5
+```
+
+### Deploy
+
+```bash
+supabase functions deploy family-agent
+```
+
+(Keep JWT verification on — the app calls it with the anon key.)
+
+Until the key is set the app degrades gracefully: the Assistant still opens, and
+Generate shows "The assistant isn't available yet (it needs setup)" instead of
+erroring.

@@ -353,6 +353,7 @@ const App = {
     undoStack: [],
     logFilter: "all",
     payEmail: "", payCard: "", payExp: "", payCvc: "", payName: "", payError: null, payBusy: false,
+    assistantInput: "", assistantBusy: false, assistantResult: "", assistantError: null,
     subscribed: false, expiresAt: null, paidUntil: null, ownerEmail: null
   },
 
@@ -1216,7 +1217,7 @@ const App = {
       isEditSheet: s.sheet === "edit", isDeleteSheet: s.sheet === "delete",
       isBoardSheet: s.sheet === "board", isShareSheet: s.sheet === "share",
       isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
-      isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu",
+      isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu", isAssistantSheet: s.sheet === "assistant",
       isRadial: s.viewMode === "radial",
       onToggleView: () => { const next = s.viewMode === "radial" ? "list" : "radial"; this.setState({ viewMode: next, radialSel: null, radialFocus: null, sheet: null }); track("view_changed", { view: next }); },
       onRadialClick: (e) => {
@@ -1240,6 +1241,25 @@ const App = {
       onOpenShareMenu: () => this.setState({ sheet: "sharemenu" }),
       onOpenBoard: () => this.setState({ sheet: "board" }),
       onOpenShare: () => { this.setState({ sheet: "share" }); track("board_share_opened", {}); },
+      onOpenAssistant: () => this.setState({ sheet: "assistant", assistantResult: "", assistantError: null }),
+      assistantInput: s.assistantInput,
+      assistantBusy: s.assistantBusy, assistantResult: s.assistantResult, assistantError: s.assistantError,
+      onAssistantInput: e => this.setState({ assistantInput: e.target.value }),
+      onCopyAssistant: () => { this.copy(this.state.assistantResult); this.setState({ toast: { text: "Copied to clipboard", i: "✓", c: this.accent() } }, () => this.flashToast()); },
+      onRunAssistant: async () => {
+        const st = this.state;
+        if (!sb) { this.setState({ assistantError: "You need to be online for the assistant." }); return; }
+        this.setState({ assistantBusy: true, assistantError: null, assistantResult: "" });
+        track("assistant_run");
+        try {
+          const { data, error } = await sb.functions.invoke("family-agent", { body: { code: st.room, task: "auto", message: st.assistantInput } });
+          if (error) throw error;
+          if (data && data.error) throw new Error(data.error);
+          this.setState({ assistantBusy: false, assistantResult: (data && data.result) || "No response." });
+        } catch (e) {
+          this.setState({ assistantBusy: false, assistantError: "The assistant isn't available yet (it needs setup) — please try again in a bit." });
+        }
+      },
       onOpenDownload: () => this.setState({ sheet: "download" }),
       onOpenUpgrade: () => this.setState({ sheet: "upgrade", payError: null }),
       onDownloadPdf: () => { this.downloadTree("pdf", total); track("tree_downloaded", { format: "pdf" }); },
@@ -1923,6 +1943,7 @@ function sheets(V) {
   else if (V.isAddSheet) n = addSheet(V);
   else if (V.isConnectSheet) n = connectSheet(V);
   else if (V.isMenuSheet) n = menuSheet(V);
+  else if (V.isAssistantSheet) n = assistantSheet(V);
   else if (V.isShareMenuSheet) n = shareMenuSheet(V);
   else if (V.isParentPickSheet) n = parentPickSheet(V);
   else if (V.isDeleteSheet) n = deleteSheet(V);
@@ -2065,6 +2086,33 @@ function hamburgerIcon() {
 }
 
 // Three-dot menu: board info + log / expand / collapse + live activity ticker.
+function assistantSheet(V) {
+  const examples = [
+    "Write an obituary for Manuel Reyes.",
+    "Plan a seating chart — 8 per table, keep each family together.",
+    "Who are Rosa's grandchildren?",
+  ];
+  return h("div", { key: "sheet-assistant", style: SHEET + "; max-height:90%; gap:14px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; flex-direction:column; gap:4px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px" }, "✨ Assistant"),
+      h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "It drafts only from this board's tree — no invented names or dates. Always read it over before sharing.")
+    ),
+    h("textarea", { value: V.assistantInput, onInput: V.onAssistantInput, placeholder: "Ask in your own words — an obituary, a seating chart, or a question about the family.", rows: "3", style: "font-family:Figtree, system-ui, sans-serif; font-size:15px; line-height:1.45; padding:14px 16px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none; resize:vertical; min-height:72px; box-sizing:border-box" }),
+    h("div", { style: "display:flex; flex-direction:column; gap:5px; padding:0 4px" },
+      h("div", { style: "font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#a49a89" }, "You can ask things like"),
+      examples.map((e, i) => h("div", { key: "ex" + i, style: "font-size:13px; line-height:1.45; color:#82796a" }, "“" + e + "”"))
+    ),
+    V.assistantError ? h("div", { style: "font-size:13px; font-weight:700; line-height:1.45; color:#8c491a" }, V.assistantError) : null,
+    btn({ onClick: V.assistantBusy ? null : V.onRunAssistant, style: "font-size:16px; font-weight:800; padding:15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; opacity:" + (V.assistantBusy ? ".7" : "1"), hover: "background:#b2622d" }, V.assistantBusy ? "Working… this can take a moment" : "Generate"),
+    V.assistantResult ? h("div", { style: "display:flex; flex-direction:column; gap:10px" },
+      h("div", { class: "noscroll", style: "white-space:pre-wrap; font-size:14px; line-height:1.6; color:#201e1d; background:#f9f4ed; border:1.5px solid #dcd3c4; border-radius:18px; padding:16px; max-height:340px; overflow:auto" }, V.assistantResult),
+      btn({ onClick: V.onCopyAssistant, style: "align-self:flex-start; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Copy")
+    ) : null,
+    btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:14px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Close")
+  );
+}
+
 function menuSheet(V) {
   const item = "display:flex; align-items:center; gap:12px; width:100%; text-align:left; font-size:15px; font-weight:700; padding:14px 16px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
   return h("div", { key: "sheet-menu", style: SHEET + "; max-height:82%; gap:12px", class: "noscroll" },
@@ -2088,6 +2136,13 @@ function menuSheet(V) {
       h("span", { style: "display:flex; flex-direction:column; gap:1px" },
         h("span", null, V.isRadial ? "Switch to List view" : "Switch to Radial view"),
         h("span", { style: "font-size:11px; font-weight:600; color:#82796a" }, V.isRadial ? "The scrollable list you add and edit in" : "A circular read-only overview of everyone")
+      )
+    ),
+    btn({ onClick: V.onOpenAssistant, style: item + "; border-color:#c67139; background:#fff2eb", hover: "border-color:#b2622d" },
+      h("span", { style: "font-size:17px" }, "✨"),
+      h("span", { style: "display:flex; flex-direction:column; gap:1px" },
+        h("span", null, "Assistant"),
+        h("span", { style: "font-size:11px; font-weight:600; color:#82796a" }, "Draft an obituary or a seating chart from your tree")
       )
     ),
     btn({ onClick: V.onOpenLog, style: item, hover: "border-color:#c67139" },
