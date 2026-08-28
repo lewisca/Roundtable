@@ -1460,11 +1460,16 @@ const App = {
     const s = this.state;
     const rows = this.flatten(false, true).filter(r => r.isCard);
     const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-    const rowHtml = rows.map(r => `<div style="margin-left:${r.depth * 22}px;padding:8px 12px;border-left:5px solid ${r.color};margin-bottom:6px">
-        <strong style="font-size:16px">${esc(r.name)}</strong> <span style="color:#82796a">${esc(r.years)}</span>
-        ${r.partners.map(pt => ` &nbsp;♥ ${esc(pt.name)} <span style="color:#82796a">${esc(pt.years)}</span>`).join("")}${r.coParent ? ` <span style="color:#82796a; font-style:italic">· with ${esc(r.coParent)}</span>` : ""}
-        ${r.detail ? `<div style="color:#645c50;font-size:13px">${esc(r.detail)}</div>` : ""}
-        <div style="color:#c0b6a5;font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(r.byLine)}</div>
+    const rowHtml = rows.map(r => `<div style="display:flex;align-items:flex-start;gap:10px;margin-left:${r.depth * 22}px;padding:8px 12px;border-left:5px solid ${r.color};margin-bottom:6px">
+        ${r.photo
+          ? `<img src="${r.photo}" alt="" style="width:38px;height:38px;flex:none;border-radius:50%;object-fit:cover;border:2px solid ${r.color}">`
+          : `<span style="width:38px;height:38px;flex:none;border-radius:50%;background:${r.soft};border:2px solid ${r.color};color:${r.color};font-weight:700;font-size:13px;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center">${esc(r.initials)}</span>`}
+        <div style="min-width:0">
+          <strong style="font-size:16px">${esc(r.name)}</strong> <span style="color:#82796a">${esc(r.years)}</span>
+          ${r.partners.map(pt => ` &nbsp;♥ ${esc(pt.name)} <span style="color:#82796a">${esc(pt.years)}</span>`).join("")}${r.coParent ? ` <span style="color:#82796a; font-style:italic">· with ${esc(r.coParent)}</span>` : ""}
+          ${r.detail ? `<div style="color:#645c50;font-size:13px">${esc(r.detail)}</div>` : ""}
+          <div style="color:#c0b6a5;font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(r.byLine)}</div>
+        </div>
       </div>`).join("");
     const logHtml = s.log.map(l => `<div style="padding:6px 0;border-top:1px solid #dcd3c4;font-size:13px"><strong>${esc(l.who)}</strong> ${esc(l.verb)} ${esc(l.target)}${l.detail ? ` — <span style="color:#645c50">${esc(l.detail)}</span>` : ""} <span style="color:#82796a;font-family:monospace;font-size:11px">${esc(l.when)}</span></div>`).join("");
     const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(s.familyName || "Family")} — Roundtable</title>
@@ -1514,8 +1519,14 @@ const App = {
       const midY = y + 23;
       b += `<rect x="${x}" y="${y}" width="6" height="${rowH - 16}" rx="3" fill="${r.color}"/>`;
       const ax = x + 32;
-      b += `<circle cx="${ax}" cy="${midY}" r="17" fill="${r.soft}" stroke="${r.color}" stroke-width="2.5"/>`;
-      b += `<text x="${ax}" y="${midY + 4}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="12" fill="${r.color}">${esc(r.initials)}</text>`;
+      if (r.photo) {
+        b += `<clipPath id="pc${i}"><circle cx="${ax}" cy="${midY}" r="17"/></clipPath>`;
+        b += `<image x="${ax - 17}" y="${midY - 17}" width="34" height="34" preserveAspectRatio="xMidYMid slice" clip-path="url(#pc${i})" href="${r.photo}" xlink:href="${r.photo}"/>`;
+        b += `<circle cx="${ax}" cy="${midY}" r="17" fill="none" stroke="${r.color}" stroke-width="2.5"/>`;
+      } else {
+        b += `<circle cx="${ax}" cy="${midY}" r="17" fill="${r.soft}" stroke="${r.color}" stroke-width="2.5"/>`;
+        b += `<text x="${ax}" y="${midY + 4}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="12" fill="${r.color}">${esc(r.initials)}</text>`;
+      }
       const tx = ax + 30;
       b += `<text x="${tx}" y="${midY - 3}" font-family="Georgia,serif" font-weight="bold" font-size="20" fill="#201e1d">${esc(r.name)}<tspan font-family="Arial,sans-serif" font-weight="normal" font-size="12" fill="#82796a">   ${esc(r.years)}</tspan></text>`;
       const sub = [];
@@ -1531,7 +1542,7 @@ const App = {
       b += `<text x="${P}" y="${y}" font-family="Arial,sans-serif" font-size="13" fill="#201e1d"><tspan font-weight="bold">${esc(l.who)}</tspan> ${esc(l.verb)} ${esc(l.target)}<tspan fill="#82796a" font-size="11">   ${esc(l.when)}</tspan></text>`;
     });
     b += `<text x="${P}" y="${H - 20}" font-family="Arial,sans-serif" font-size="11" fill="#82796a">Made with Roundtable — the family tree you build together.</text>`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${b}</svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${b}</svg>`;
     const fname = ((s.familyName || "family").replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/^-+|-+$/g, "") || "family") + "-tree.png";
     const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
     const finish = () => this.setState(st => ({
