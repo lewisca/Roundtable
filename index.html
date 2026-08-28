@@ -810,6 +810,36 @@ const App = {
     };
     input.click();
   },
+  /* ---- Project (full-screen for a TV / projector) ---------------------- */
+  isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); },
+  goFullscreen() {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (req) { try { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+  },
+  leaveFullscreen() {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (this.isFullscreen() && exit) { try { const r = exit.call(document); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+  },
+  toggleFullscreen() { if (this.isFullscreen()) this.leaveFullscreen(); else this.goFullscreen(); this.setState({ tick: this.state.tick + 1 }); },
+  // Keep the screen awake while projecting (released automatically if the tab is hidden).
+  async requestWakeLock() {
+    try {
+      if (navigator.wakeLock && navigator.wakeLock.request) this._wakeLock = await navigator.wakeLock.request("screen");
+    } catch (e) {}
+  },
+  releaseWakeLock() { try { if (this._wakeLock) { this._wakeLock.release(); this._wakeLock = null; } } catch (e) {} },
+  openProjection() {
+    this.goFullscreen();            // must run inside the click gesture
+    this.requestWakeLock();
+    this.setState({ projection: true, sheet: null, selected: null });
+    track("projection_opened", {});
+  },
+  closeProjection() {
+    this.leaveFullscreen();
+    this.releaseWakeLock();
+    this.setState({ projection: false });
+  },
   saveEdit() {
     const s = this.state, name = s.draftName.trim();
     if (!name) return;
@@ -1212,8 +1242,10 @@ const App = {
       hereLabel: (s.room === DEMO_ROOM ? "5 here" : (s.hereCount + " here")),
       wide: s.wide,
       isProjection: s.projection,
-      onOpenProjection: () => { this.setState({ projection: true, sheet: null, selected: null }); track("projection_opened", {}); },
-      onExitProjection: () => this.setState({ projection: false }),
+      isFullscreen: this.isFullscreen(),
+      onOpenProjection: () => this.openProjection(),
+      onExitProjection: () => this.closeProjection(),
+      onToggleFullscreen: () => this.toggleFullscreen(),
       bigRows: this.flatten(true),
       bigLog: s.log.slice(0, 14).map(l => ({ who: l.who, i: l.i, c: l.c, verb: l.verb, target: l.target, when: l.when, verbColor: l.kind === "remove" ? "#8c491a" : (l.kind === "add" ? "#56633f" : "#645c50") })),
       zoom: s.zoom,
@@ -2009,7 +2041,9 @@ function projection(V) {
           h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(38px,5vw,64px); color:#c67139; line-height:1" }, String(V.peopleCount)),
           h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(9px,.9vw,12px); letter-spacing:.14em; text-transform:uppercase; color:#82796a" }, "people so far")
         ),
-        btn({ onClick: V.onExitProjection, title: "Exit projection view", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+        btn({ onClick: V.onToggleFullscreen, title: V.isFullscreen ? "Leave full screen" : "Fill the whole screen (best for a TV or projector)", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" },
+          h("span", { style: "font-size:14px" }, V.isFullscreen ? "⤢" : "⛶"), h("span", null, V.isFullscreen ? "Exit full screen" : "Full screen")),
+        btn({ onClick: V.onExitProjection, title: "Back to editing", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
           h("span", { style: "font-size:14px" }, "↙"), h("span", null, "Exit"))
       )
     ),
@@ -2044,7 +2078,12 @@ function projection(V) {
           h("div", { style: "width:72px; height:72px; flex:none; border-radius:14px; background:repeating-linear-gradient(45deg,#dcd3c4 0 6px,#eee7db 6px 12px)" }),
           h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:12px; line-height:1.6; color:#645c50" },
             "add from your phone", h("br"), "board ", h("span", { style: "font-weight:700; color:#8c491a" }, V.room))
-        )
+        ),
+        h("div", { style: "flex:none; font-size:12px; line-height:1.55; color:#82796a" },
+          h("span", { style: "font-weight:700; color:#645c50" }, "On a TV: "),
+          "cast this tab from your browser’s menu, or plug in an HDMI cable. Tap ",
+          h("span", { style: "font-weight:700; color:#8c491a" }, "Full screen"),
+          " to fill the screen.")
       )
     )
   );
@@ -2616,6 +2655,10 @@ function upgradeSheet(V) {
   App.state.wide = App._mq.matches;
   App._mq.addEventListener("change", e => App.setState({ wide: e.matches }));
   window.addEventListener("resize", () => App.syncGenArrows());
+  // Keep the Full-screen button label honest when the user leaves via Esc, and
+  // re-arm the wake lock after the tab was hidden (browsers drop it automatically).
+  document.addEventListener("fullscreenchange", () => { if (App.state.step === "app") App.setState({ tick: App.state.tick + 1 }); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && App.state.projection) App.requestWakeLock(); });
   App.render();
   if (App.state.step === "app") App.startLive();
   // Returned from Stripe Checkout: confirm, and let the webhook + realtime flip is_paid.
