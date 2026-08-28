@@ -825,15 +825,28 @@ const App = {
     reader.onerror = () => cb(null);
     reader.readAsDataURL(file);
   },
-  // Open the OS file picker imperatively (avoids vdom change-event quirks on file inputs).
+  // Open the OS file picker. The input MUST be in the DOM or mobile Safari fires
+  // the change event unreliably (works once, then not) — so attach, click inside
+  // the tap, and clean up afterward.
   pickPhoto() {
     const input = document.createElement("input");
-    input.type = "file"; input.accept = "image/*";
-    input.onchange = () => {
+    input.type = "file";
+    input.accept = "image/*";
+    input.style.cssText = "position:fixed; left:-9999px; top:0; width:1px; height:1px; opacity:0";
+    const done = () => { try { input.remove(); } catch (e) {} };
+    input.addEventListener("change", () => {
       const f = input.files && input.files[0];
+      done();
       if (!f) return;
-      this.readPhoto(f, (url) => { if (url) this.setState({ draftPhoto: url }); else this.setState({ toast: { text: "Couldn't read that image — try another", i: "!", c: "#8c491a" } }, () => this.flashToast()); });
-    };
+      this.readPhoto(f, (url) => {
+        if (url) this.setState({ draftPhoto: url });
+        else this.setState({ toast: { text: "Couldn't read that image — try another", i: "!", c: "#8c491a" } }, () => this.flashToast());
+      });
+    });
+    // If the picker is dismissed with no choice, remove the stray input on refocus.
+    const onFocus = () => { window.removeEventListener("focus", onFocus); setTimeout(() => { if (!input.files || !input.files.length) done(); }, 600); };
+    window.addEventListener("focus", onFocus);
+    document.body.appendChild(input);
     input.click();
   },
   /* ---- Project (full-screen for a TV / projector) ---------------------- */
@@ -1083,30 +1096,12 @@ const App = {
         if (flat) {
           if (depth < genView) walk(p.id, depth + 1);   // keep descending until we reach the chosen generation
         } else if (!collapsed && kids.length) {
-          walk(p.id, depth + 1);
-          if (!forBig) {
-            const cg = this.gen(depth + 1);
-            rows.push({
-              isCard: false, isAdd: true, id: p.id + "-add", pad: indentAt(depth + 1),
-              ribLeft: indentAt(depth) + 6, ribW: stub(depth + 1, depth), ribColor: cg.color,
-              showRib: true, showSpine: false, dim: 1, color: cg.color,
-              label: p.placeholder ? "+ Add another child here" : "+ Add another child of " + p.name.split(" ")[0],
-              onAdd: () => this.openNew(p.id, "child")
-            });
-          }
+          walk(p.id, depth + 1);   // add-a-child is the + on each card, not an inline row
         }
       });
     };
     walk(null, 0);
-    // Collapse consecutive "+ Add another child" dashed rows into one — keep the
-    // deepest (first), which adds a sibling to the card right above it. Higher
-    // ancestors are still reachable via their own + button.
-    const out = [];
-    rows.forEach(r => {
-      if (r.isAdd && out.length && out[out.length - 1].isAdd) return;
-      out.push(r);
-    });
-    return out;
+    return rows;
   },
 
   renderVals() {
