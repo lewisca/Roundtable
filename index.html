@@ -1539,7 +1539,7 @@ const App = {
   copy(text) { try { navigator.clipboard && navigator.clipboard.writeText(text); } catch (e) {} },
 
   downloadTree(kind, total) {
-    // Real, free export: a self-contained printable HTML of the whole tree + log.
+    // Real, free export: a self-contained printable HTML of the whole tree.
     const s = this.state;
     const rows = this.flatten(false, true).filter(r => r.isCard);
     const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -1551,10 +1551,8 @@ const App = {
           <strong style="font-size:16px">${esc(r.name)}</strong> <span style="color:#82796a">${esc(r.years)}</span>
           ${r.partners.map(pt => ` &nbsp;♥ ${esc(pt.name)} <span style="color:#82796a">${esc(pt.years)}</span>`).join("")}${r.coParent ? ` <span style="color:#82796a; font-style:italic">· with ${esc(r.coParent)}</span>` : ""}
           ${r.detail ? `<div style="color:#645c50;font-size:13px">${esc(r.detail)}</div>` : ""}
-          <div style="color:#c0b6a5;font-size:11px;text-transform:uppercase;letter-spacing:.08em">${esc(r.byLine)}</div>
         </div>
       </div>`).join("");
-    const logHtml = s.log.map(l => `<div style="padding:6px 0;border-top:1px solid #dcd3c4;font-size:13px"><strong>${esc(l.who)}</strong> ${esc(l.verb)} ${esc(l.target)}${l.detail ? ` — <span style="color:#645c50">${esc(l.detail)}</span>` : ""} <span style="color:#82796a;font-family:monospace;font-size:11px">${esc(l.when)}</span></div>`).join("");
     const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(s.familyName || "Family")} — Roundtable</title>
       <style>body{font-family:Georgia,serif;color:#201e1d;max-width:820px;margin:40px auto;padding:0 24px;background:#f5ead8}
       h1{font-size:38px;margin:0}h2{margin-top:40px}@media print{body{background:#fff}}</style></head>
@@ -1562,7 +1560,6 @@ const App = {
       <div style="text-transform:uppercase;letter-spacing:.16em;color:#8c491a;font-size:12px">Board ${esc(s.room)} · ${esc(total)} people</div>
       <h1>${esc(s.familyName || "Our Family")}</h1>
       <h2>The tree</h2>${rowHtml}
-      <h2>Change log</h2>${logHtml}
       <p style="color:#82796a;font-size:12px;margin-top:30px">Made with Roundtable — the family tree you build together.</p>
       </body></html>`;
     const blob = new Blob([doc], { type: "text/html" });
@@ -1576,22 +1573,20 @@ const App = {
     this.setState(st => ({
       sheet: null,
       log: this.logEntry(st, "downloaded", kind === "pdf" ? "the tree as a PDF" : "the tree as an image", "export"),
-      toast: { text: kind === "pdf" ? "Printable sheet opened — " + total + " people, log included" : "Tree saved — open it any time", i: "✓", c: this.accent() }
+      toast: { text: kind === "pdf" ? "Printable sheet opened — " + total + " people" : "Tree saved — open it any time", i: "✓", c: this.accent() }
     }), () => this.flashToast());
   },
 
-  // Renders the whole tree + change log to a real PNG (native SVG → canvas),
+  // Renders the whole tree to a real PNG (native SVG → canvas),
   // so "Download as image" produces an actual image of the tree. Falls back to
   // the printable HTML if the browser can't export the canvas.
   downloadImage(total) {
     const s = this.state;
     const rows = this.flatten(false, true).filter(r => r.isCard);
     const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-    const W = 980, P = 46, headTop = 58, treeTop = 132, rowH = 66, logRowH = 26;
-    const logRows = s.log.slice(0, 40);
+    const W = 980, P = 46, headTop = 58, treeTop = 132, rowH = 66;
     const treeH = rows.length * rowH;
-    const logTop = treeTop + treeH + 46;
-    const H = logTop + 30 + logRows.length * logRowH + 44;
+    const H = treeTop + treeH + 46;
     let b = "";
     b += `<rect x="0" y="0" width="${W}" height="${H}" fill="#f5ead8"/>`;
     b += `<text x="${P}" y="${headTop}" font-family="Georgia,serif" font-weight="bold" font-size="40" fill="#201e1d">${esc(s.familyName || "Our Family")}</text>`;
@@ -1617,12 +1612,6 @@ const App = {
       if (r.coParent) sub.push("with " + r.coParent);
       if (r.detail) sub.push(r.detail);
       if (sub.length) b += `<text x="${tx}" y="${midY + 15}" font-family="Arial,sans-serif" font-size="12" fill="#645c50">${esc(sub.join("   ·   "))}</text>`;
-      b += `<text x="${tx}" y="${midY + 31}" font-family="Arial,sans-serif" font-size="9" letter-spacing="1" fill="#c0b6a5">${esc((r.byLine || "").toUpperCase())}</text>`;
-    });
-    b += `<text x="${P}" y="${logTop}" font-family="Georgia,serif" font-weight="bold" font-size="22" fill="#201e1d">Change log</text>`;
-    logRows.forEach((l, i) => {
-      const y = logTop + 28 + i * logRowH;
-      b += `<text x="${P}" y="${y}" font-family="Arial,sans-serif" font-size="13" fill="#201e1d"><tspan font-weight="bold">${esc(l.who)}</tspan> ${esc(l.verb)} ${esc(l.target)}<tspan fill="#82796a" font-size="11">   ${esc(l.when)}</tspan></text>`;
     });
     b += `<text x="${P}" y="${H - 20}" font-family="Arial,sans-serif" font-size="11" fill="#82796a">Made with Roundtable — the family tree you build together.</text>`;
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${b}</svg>`;
@@ -1631,7 +1620,7 @@ const App = {
     const finish = () => this.setState(st => ({
       sheet: null,
       log: this.logEntry(st, "downloaded", "the tree as an image", "export"),
-      toast: { text: "Image saved — " + total + " people, log included", i: "✓", c: this.accent() }
+      toast: { text: "Image saved — " + total + " people", i: "✓", c: this.accent() }
     }), () => this.flashToast());
     const img = new Image();
     img.onload = () => {
@@ -2641,7 +2630,7 @@ function logSheet(V) {
         )
       ))
     ),
-    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "The log travels with the tree — it's in the backup and on the printed sheet."),
+    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "The log stays with the board and its backup."),
     btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Back to the tree")
   );
 }
@@ -2661,7 +2650,7 @@ function downloadSheet(V) {
       btn({ onClick: V.onDownloadPdf, style: "font-size:15px; font-weight:800; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Download as PDF"),
       btn({ onClick: V.onDownloadImage, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #c67139; background:transparent; color:#8c491a; cursor:pointer", hover: "background:#fff2eb" }, "Download as image")
     ),
-    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "Both include every name, the generation colours, and the change log printed on the last page. Free, and yours to keep.")
+    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "Both include every name and the generation colours. Free, and yours to keep.")
   );
 }
 
