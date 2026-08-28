@@ -341,7 +341,7 @@ const App = {
     nameError: null,
     familyName: SEED.familyName,
     zoom: 1,
-    projection: false, immersive: false, castHelp: false, lightbox: null, projZoom: 1,
+    projection: false, immersive: false, castHelp: false, lightbox: null, toolsOpen: false, projZoom: 1,
     wide: false,
     hereCount: 1,
     query: "",
@@ -1368,6 +1368,8 @@ const App = {
       isRows: s.viewMode === "rows",
       genGroups: genGroups, rowsSummary: rowsSummary,
       onSetView: (m) => () => { if (this.state.viewMode === m) return; this.setState({ viewMode: m, radialSel: null, radialFocus: null, sheet: null }); track("view_changed", { view: m }); },
+      toolsOpen: s.toolsOpen,
+      onToggleTools: () => this.setState({ toolsOpen: !this.state.toolsOpen }),
       onRadialClick: (e) => {
         const g = e.target && e.target.closest ? e.target.closest("[data-node]") : null;
         const id = g ? g.getAttribute("data-node") : null;
@@ -1877,54 +1879,51 @@ function appHeader(V, wide) {
   const seg = on => "flex:none; font-size:12px; font-weight:700; padding:6px 10px; border-radius:999px; border:none; cursor:pointer; white-space:nowrap; background:" + (on ? "#201e1d" : "transparent") + "; color:" + (on ? "#f5ead8" : "#645c50");
   const miniBtn = "flex:none; font-size:11px; font-weight:700; padding:7px 10px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer;";
   return h("div", { style: "flex:none; background:#f9f4ed; border-bottom:1.5px solid #dcd3c4; padding:8px 16px 9px; display:flex; flex-direction:column; gap:7px" },
-    // Row 1 — home + boards
-    h("div", { style: "display:flex; align-items:center; gap:8px" },
-      btn({ onClick: V.onGoLanding, title: "Roundtable home", style: "font-family:Caprasimo, serif; flex:none; width:30px; height:30px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; font-size:14px; cursor:pointer", hover: "background:#b2622d" }, "R"),
-      btn({ onClick: V.onLeaveBoard, style: "flex:none; display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:6px 12px 6px 10px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
-        h("span", { style: "font-size:14px" }, "←"), h("span", null, "Boards"))
-    ),
-    // Row 2 — family name + edit, three-dot menu, and share icon (top-right)
+    // Row 1 — Boards + family name + edit / menu / share
     h("div", { style: "display:flex; align-items:center; gap:7px" },
-      inp({ id: "rt-familyname", value: V.familyName, onChange: V.onFamilyName, maxlength: "18", placeholder: "Family name", style: "flex:1; min-width:0; font-family:Caprasimo, serif; font-size:22px; line-height:1.15; color:#201e1d; background:transparent; border:none; outline:none; padding:0; text-overflow:ellipsis" }),
-      btn({ onClick: () => { const el = document.getElementById("rt-familyname"); if (el) { el.focus(); el.select(); } }, title: "Edit family name", "aria-label": "Edit family name", style: iconBtn + " width:30px; height:30px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#82796a; font-size:14px", hover: "border-color:#c67139; color:#8c491a" }, "✎"),
-      btn({ onClick: V.onOpenMenu, title: "Log, expand, collapse, live activity", "aria-label": "More", style: iconBtn + " width:32px; height:32px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:20px; line-height:1", hover: "border-color:#c67139; color:#8c491a" }, "⋮"),
+      btn({ onClick: V.onLeaveBoard, title: "Back to your boards", style: "flex:none; display:flex; align-items:center; gap:5px; font-size:12px; font-weight:700; padding:6px 11px 6px 9px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
+        h("span", { style: "font-size:14px" }, "←"), h("span", null, "Boards")),
+      inp({ id: "rt-familyname", value: V.familyName, onChange: V.onFamilyName, maxlength: "18", placeholder: "Family name", style: "flex:1; min-width:0; font-family:Caprasimo, serif; font-size:21px; line-height:1.15; color:#201e1d; background:transparent; border:none; outline:none; padding:0; text-overflow:ellipsis" }),
+      btn({ onClick: () => { const el = document.getElementById("rt-familyname"); if (el) { el.focus(); el.select(); } }, title: "Edit family name", "aria-label": "Edit family name", style: iconBtn + " width:30px; height:30px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#82796a; font-size:13px", hover: "border-color:#c67139; color:#8c491a" }, "✎"),
+      btn({ onClick: V.onOpenMenu, title: "Menu — show on a TV, log, live activity", "aria-label": "More", style: iconBtn + " width:32px; height:32px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:20px; line-height:1", hover: "border-color:#c67139; color:#8c491a" }, "⋮"),
       btn({ onClick: V.onOpenShareMenu, title: "Share & download", "aria-label": "Share", style: iconBtn + " width:34px; height:34px; border:none; background:#c67139; color:#fff2eb; font-size:15px", hover: "background:#b2622d" }, "↗")
     ),
-    // Toolbar row 2 (directly below the family name) — search + Project + Save
-    V.isRadial ? null : h("div", { style: "display:flex; align-items:center; gap:7px" },
-      inp({ value: V.query, onChange: V.onQuery, placeholder: "Find a name, a town, a year…", style: "flex:1; min-width:0; font-size:14px; padding:11px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-      btn({ onClick: V.onOpenProjection, title: "Full-screen live view for a TV or projector", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:10px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
-        h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project")),
-      btn({ onClick: V.onOpenUpgrade, style: "flex:none; font-size:13px; font-weight:800; padding:11px 16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
-    ),
-    // Toolbar row 3 — VIEW toggle + Expand/Collapse on one line. The toggle shows in
-    // every view (so you can always switch); Expand/Collapse only in Branches.
+    // Row 2 — only the view toggle (left) and Filters + Save (right) stay visible.
+    // Everything else (search, generation filters, expand/collapse) lives under Filters.
     h("div", { style: "display:flex; align-items:center; gap:7px" },
       h("div", { style: "flex:none; display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#ebddc5" },
-        btn({ onClick: V.onSetView("list"), title: "The indented family tree — add and edit here", style: seg(!V.isRadial && !V.isRows) }, "Branches"),
-        btn({ onClick: V.onSetView("rows"), title: "Everyone by generation — add and edit here", style: seg(V.isRows) }, "Rows"),
+        btn({ onClick: V.onSetView("list"), title: "The indented family tree", style: seg(!V.isRadial && !V.isRows) }, "Branches"),
+        btn({ onClick: V.onSetView("rows"), title: "Everyone by generation", style: seg(V.isRows) }, "Rows"),
         btn({ onClick: V.onSetView("radial"), title: "Circular read-only overview", style: seg(V.isRadial) }, "Radial")
       ),
-      (!V.isRadial && !V.isRows) ? h("div", { style: "flex:none; display:flex; align-items:center; gap:6px; margin-left:auto" },
-        btn({ onClick: V.onExpandAll, title: "Expand every branch", style: miniBtn, hover: "border-color:#c67139; color:#8c491a" }, "Expand"),
-        btn({ onClick: V.onCollapseAll, title: "Collapse every branch", style: miniBtn, hover: "border-color:#c67139; color:#8c491a" }, "Collapse")
-      ) : null
+      h("div", { style: (wide ? "" : "margin-left:auto; ") + "display:flex; align-items:center; gap:7px" },
+        V.isRadial ? null : (function () {
+          const activeGen = V.genFilters.find(f => f.active && f.label !== "All");
+          const on = V.toolsOpen || !!activeGen || !!(V.query && V.query.trim());
+          return btn({ onClick: V.onToggleTools, title: "Search, filter by generation, expand / collapse", style: "flex:none; display:flex; align-items:center; gap:5px; font-size:12px; font-weight:700; padding:8px 12px; border-radius:999px; cursor:pointer; border:1.5px solid " + (on ? "#c67139" : "#dcd3c4") + "; background:" + (on ? "#fff2eb" : "#f9f4ed") + "; color:#8c491a" },
+            h("span", { style: "font-size:9px" }, V.toolsOpen ? "▾" : "▸"),
+            h("span", null, activeGen ? activeGen.label : "Filters"));
+        })(),
+        btn({ onClick: V.onOpenUpgrade, style: "flex:none; font-size:13px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
+      )
     ),
-    // Row 5 — generation filters, scroll sideways (Branches + Rows views)
-    V.isRadial ? null : h("div", { style: "display:flex; align-items:center; gap:4px" },
-      btn({ id: "gen-arrow-left", onClick: () => { const e = document.getElementById("gen-scroll"); if (e) e.scrollBy({ left: -200, behavior: "smooth" }); }, title: "Scroll generations left", "aria-label": "Scroll left",
-        style: "display:none; flex:none; width:26px; height:26px; align-items:center; justify-content:center; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:16px; line-height:1; cursor:pointer" }, "‹"),
-      h("div", { id: "gen-scroll", class: "noscroll", onScroll: () => App.syncGenArrows(), style: "flex:1; min-width:0; display:flex; gap:6px; align-items:center; overflow-x:auto; padding-bottom:1px" },
+    // Row 3 — revealed by Filters: search + Expand/Collapse on one line, then the
+    // generation filters on their own line so they can side-scroll freely.
+    (!V.isRadial && V.toolsOpen) ? h("div", { style: "display:flex; flex-direction:column; gap:7px" },
+      h("div", { style: "display:flex; align-items:center; gap:7px" },
+        inp({ value: V.query, onChange: V.onQuery, placeholder: "Find a name, a town, a year…", style: "flex:1; min-width:0; font-size:14px; padding:10px 15px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+        (!V.isRows) ? btn({ onClick: V.onExpandAll, title: "Expand every branch", style: miniBtn, hover: "border-color:#c67139; color:#8c491a" }, "Expand") : null,
+        (!V.isRows) ? btn({ onClick: V.onCollapseAll, title: "Collapse every branch", style: miniBtn, hover: "border-color:#c67139; color:#8c491a" }, "Collapse") : null
+      ),
+      h("div", { class: "noscroll", style: "display:flex; align-items:center; gap:6px; overflow-x:auto" },
         V.genFilters.map((f, i) => btn({ key: "gf" + i, onClick: f.onPick, title: f.label === "All" ? "Show every generation" : "Show only " + f.label,
           style: "flex:none; white-space:nowrap; display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.06em; font-weight:700; padding:6px 11px; border-radius:999px; cursor:pointer; border:1.5px solid " + (f.active ? f.color : "#dcd3c4") + "; background:" + (f.active ? f.color : "#f9f4ed") + "; color:" + (f.active ? "#fff2eb" : "#645c50") },
           f.label === "All" ? null : h("span", { style: "width:14px; height:5px; border-radius:999px; display:block; background:" + (f.active ? "#fff2eb" : f.color) }),
           h("span", null, f.label.toUpperCase()),
           f.count != null ? h("span", { style: "opacity:.75" }, "(" + f.count + ")") : null
         ))
-      ),
-      btn({ id: "gen-arrow-right", onClick: () => { const e = document.getElementById("gen-scroll"); if (e) e.scrollBy({ left: 200, behavior: "smooth" }); }, title: "Scroll generations right", "aria-label": "Scroll right",
-        style: "display:none; flex:none; width:26px; height:26px; align-items:center; justify-content:center; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:16px; line-height:1; cursor:pointer" }, "›")
-    )
+      )
+    ) : null
   );
 }
 
@@ -2025,23 +2024,23 @@ function appRadial(V) {
 
 function row(r) {
   const inner = [];
-  if (r.showRib) inner.push(h("div", { key: "rib", style: "position:absolute; left:" + r.ribLeft + "px; top:0; width:" + r.ribW + "px; height:44px; border-left:4px solid " + r.ribColor + "; border-bottom:4px solid " + r.ribColor + "; border-bottom-left-radius:14px" }));
-  if (r.showSpine) inner.push(h("div", { key: "spine", style: "position:absolute; left:" + r.ribLeft + "px; top:40px; bottom:0; width:4px; background:" + r.ribColor }));
+  if (r.showRib) inner.push(h("div", { key: "rib", style: "position:absolute; left:" + r.ribLeft + "px; top:0; width:" + r.ribW + "px; height:36px; border-left:4px solid " + r.ribColor + "; border-bottom:4px solid " + r.ribColor + "; border-bottom-left-radius:14px" }));
+  if (r.showSpine) inner.push(h("div", { key: "spine", style: "position:absolute; left:" + r.ribLeft + "px; top:32px; bottom:0; width:4px; background:" + r.ribColor }));
 
   if (r.isCard) {
     const head = h("div", { style: "display:flex; align-items:stretch" },
       h("div", { style: "width:8px; flex:none; background:" + r.color }),
-      r.hasKids ? btn({ onClick: r.onToggle, style: "flex:none; width:42px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; border:none; background:" + r.soft + "; cursor:pointer" },
-        h("span", { style: "font-size:13px; color:" + r.color }, r.chevron),
-        h("span", { style: "font-size:11px; font-weight:800; color:" + r.color }, String(r.below))
+      r.hasKids ? btn({ onClick: r.onToggle, style: "flex:none; width:38px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; border:none; background:" + r.soft + "; cursor:pointer" },
+        h("span", { style: "font-size:12px; color:" + r.color }, r.chevron),
+        h("span", { style: "font-size:10px; font-weight:800; color:" + r.color }, String(r.below))
       ) : null,
-      btn({ onClick: r.onSelect, style: "flex:1; min-width:0; text-align:left; display:flex; gap:11px; align-items:flex-start; padding:12px 10px 12px 12px; border:none; background:transparent; cursor:pointer" },
+      btn({ onClick: r.onSelect, style: "flex:1; min-width:0; text-align:left; display:flex; gap:10px; align-items:flex-start; padding:8px 10px 8px 12px; border:none; background:transparent; cursor:pointer" },
         r.photo
-          ? h("img", { src: r.photo, alt: r.name, onClick: r.onPhoto, title: "Tap to enlarge", style: "flex:none; width:44px; height:44px; border-radius:999px; object-fit:cover; border:2.5px solid " + r.color + "; cursor:zoom-in" })
-          : h("span", { style: "flex:none; width:44px; height:44px; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
-        h("span", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:5px" },
+          ? h("img", { src: r.photo, alt: r.name, onClick: r.onPhoto, title: "Tap to enlarge", style: "flex:none; width:38px; height:38px; border-radius:999px; object-fit:cover; border:2.5px solid " + r.color + "; cursor:zoom-in" })
+          : h("span", { style: "flex:none; width:38px; height:38px; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
+        h("span", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:3px" },
           h("span", { style: "display:flex; align-items:baseline; gap:8px; flex-wrap:wrap" },
-            h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; overflow-wrap:anywhere; min-width:0; " + (r.placeholder ? "color:#a99a86; font-style:italic" : "color:#201e1d") }, r.name),
+            h("span", { style: "font-family:Caprasimo, serif; font-size:16px; line-height:1.15; overflow-wrap:anywhere; min-width:0; " + (r.placeholder ? "color:#a99a86; font-style:italic" : "color:#201e1d") }, r.name),
             h("span", { style: "font-size:12px; color:#82796a" }, r.years)
           ),
           r.childOf ? h("span", { style: "align-self:flex-start; display:flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; background:" + r.soft + "; font-size:11px; font-weight:700; color:" + r.color },
@@ -2065,7 +2064,7 @@ function row(r) {
             );
           }),
           r.detail ? h("span", { style: "font-size:12px; line-height:1.4; color:#645c50" }, r.detail) : null,
-          h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + r.byColor }, r.byLine),
+          (r.selected || r.placeholder) ? h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + r.byColor }, r.byLine) : null,
           r.flagged ? h("span", { style: "align-self:flex-start; font-size:10px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:3px 9px; border-radius:999px" }, "two entries — tap, then open the chat") : null
         )
       ),
@@ -2083,7 +2082,7 @@ function row(r) {
   } else if (r.isAdd) {
     inner.push(btn({ key: "add", onClick: r.onAdd, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:14px 18px; border-radius:24px; border:2px dashed " + r.color + "; background:#f9f4ed; color:" + r.color + "; cursor:pointer" }, r.label));
   }
-  return h("div", { key: r.id, id: r.isCard ? ("node-" + r.id) : null, style: "position:relative; padding-left:" + r.pad + "px; padding-top:12px; opacity:" + r.dim }, inner);
+  return h("div", { key: r.id, id: r.isCard ? ("node-" + r.id) : null, style: "position:relative; padding-left:" + r.pad + "px; padding-top:9px; opacity:" + r.dim }, inner);
 }
 const actBtn = "font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
 
@@ -2438,6 +2437,13 @@ function menuSheet(V) {
       )
     ),
     */
+    btn({ onClick: V.onOpenProjection, style: item, hover: "border-color:#c67139" },
+      h("span", { style: "font-size:17px" }, "⤢"),
+      h("span", { style: "display:flex; flex-direction:column; gap:1px" },
+        h("span", null, "Show on a TV"),
+        h("span", { style: "font-size:11px; font-weight:600; color:#82796a" }, "Full-screen live view for a TV or projector")
+      )
+    ),
     btn({ onClick: V.onOpenLog, style: item, hover: "border-color:#c67139" },
       hamburgerIcon(), h("span", { style: "flex:1" }, "Change log"),
       h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#82796a" }, String(V.logCount))
