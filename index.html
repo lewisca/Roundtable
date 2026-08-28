@@ -2202,6 +2202,10 @@ function projRow(r) {
   if (r.showSpine) inner.push(h("div", { key: "spine", style: "position:absolute; left:" + r.ribLeft + "px; top:30px; bottom:0; width:4px; background:" + r.ribColor }));
   inner.push(h("div", { key: "card", style: "display:flex; align-items:center; gap:14px; padding:10px 20px 10px 0; border-radius:20px; border:2px solid " + r.borderColor + "; background:#f9f4ed; overflow:hidden" },
     h("div", { style: "width:8px; align-self:stretch; background:" + r.color }),
+    r.hasKids ? btn({ onClick: r.onToggle, title: r.chevron === "▸" ? "Show this branch" : "Hide this branch", "aria-label": "Collapse or expand branch", style: "flex:none; align-self:stretch; width:46px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; border:none; background:" + r.soft + "; cursor:pointer" },
+      h("span", { style: "font-size:16px; color:" + r.color }, r.chevron),
+      h("span", { style: "font-size:12px; font-weight:800; color:" + r.color }, String(r.below))
+    ) : null,
     r.photo
       ? h("img", { src: r.photo, alt: r.name, style: "width:40px; height:40px; flex:none; border-radius:999px; object-fit:cover; border:2.5px solid " + r.color })
       : h("div", { style: "width:40px; height:40px; flex:none; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
