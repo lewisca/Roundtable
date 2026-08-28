@@ -341,7 +341,7 @@ const App = {
     nameError: null,
     familyName: SEED.familyName,
     zoom: 1,
-    projection: false, immersive: false, castHelp: false, lightbox: null,
+    projection: false, immersive: false, castHelp: false, lightbox: null, projZoom: 1,
     wide: false,
     hereCount: 1,
     query: "",
@@ -1291,6 +1291,9 @@ const App = {
       showCastHelp: s.castHelp,
       onShowCast: () => this.setState({ castHelp: true }),
       onHideCast: () => this.setState({ castHelp: false }),
+      projZoom: s.projZoom, projZoomLabel: Math.round(s.projZoom * 100) + "%",
+      onProjZoomIn: () => this.setState({ projZoom: Math.min(1.6, +(this.state.projZoom + 0.1).toFixed(2)) }),
+      onProjZoomOut: () => this.setState({ projZoom: Math.max(0.5, +(this.state.projZoom - 0.1).toFixed(2)) }),
       onOpenProjection: () => this.openProjection(),
       onExitProjection: () => this.closeProjection(),
       onToggleFullscreen: () => this.toggleFullscreen(),
@@ -2104,6 +2107,10 @@ function projection(V) {
           h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(38px,5vw,64px); color:#c67139; line-height:1" }, String(V.peopleCount)),
           h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(9px,.9vw,12px); letter-spacing:.14em; text-transform:uppercase; color:#82796a" }, "people so far")
         ),
+        h("div", { title: "Zoom the tree — smaller fits more branches on screen", style: "flex:none; display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#ebddc5" },
+          btn({ onClick: V.onProjZoomOut, "aria-label": "Zoom out — fit more branches", style: "width:34px; height:34px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:19px; font-weight:700; cursor:pointer; line-height:1" }, "−"),
+          h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:12px; color:#645c50; min-width:44px; text-align:center" }, V.projZoomLabel),
+          btn({ onClick: V.onProjZoomIn, "aria-label": "Zoom in — enlarge", style: "width:34px; height:34px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:19px; font-weight:700; cursor:pointer; line-height:1" }, "+")),
         btn({ onClick: V.onShowCast, title: "How to put this on a TV or projector", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" },
           h("span", { style: "font-size:14px" }, "📺"), h("span", null, "Show on a TV")),
         V.canRealFullscreen ? btn({ onClick: V.onToggleFullscreen, title: V.isFullscreen ? "Leave full screen" : "Fill the whole screen", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
@@ -2116,7 +2123,7 @@ function projection(V) {
     h("div", { class: "proj-cols" },
       h("div", { class: "proj-main" },
         h("div", { class: "proj-tree noscroll" },
-          h("div", { style: "display:flex; flex-direction:column" },
+          h("div", { style: "zoom:" + V.projZoom + "; display:flex; flex-direction:column" },
             V.bigRows.length
               ? V.bigRows.map(r => projRow(r))
               : h("div", { style: "padding:40px 8px; font-size:18px; color:#645c50; line-height:1.5" }, "No names yet — add the first relative from a phone and watch them appear here.")
