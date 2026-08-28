@@ -341,7 +341,7 @@ const App = {
     parentPickSel: {},
     deleteId: null,
     draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "",
-    draftPartners: [], draftCoParent: "", draftMore: false,
+    draftPartners: [], draftCoParent: "", draftMore: false, draftPhoto: "",
     tick: 0,
     toast: null,
     fresh: {},
@@ -730,7 +730,7 @@ const App = {
   },
   openNew(parentId, kind) {
     this.pushUndo();
-    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, editParentOf: null, addKind: kind || null, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, editParentOf: null, addKind: kind || null, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false, draftPhoto: "" });
   },
   // Insert a new person ABOVE `id`: the new person takes `id`'s old parent
   // (or becomes a root), and `id` becomes its child. Handles "I added myself
@@ -738,7 +738,7 @@ const App = {
   openParent(id) {
     this.pushUndo();
     const child = this.state.people.find(p => p.id === id);
-    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: [id], addKind: "parent", draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false });
+    this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: [id], addKind: "parent", draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false, draftPhoto: "" });
   },
   // The + button on a card opens a small menu to add a child, parent, or sibling.
   openAddMenu(id) { this.setState({ sheet: "add", addForId: id, selected: id }); },
@@ -762,7 +762,7 @@ const App = {
     this.setState({
       sheet: "edit", editId: null, editIsNew: true,
       editParent: (anchor ? (anchor.parentId || null) : null), editParentOf: ids, addKind: "parent",
-      draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false
+      draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false, draftPhoto: ""
     });
   },
   openEdit(id) {
@@ -772,8 +772,43 @@ const App = {
       sheet: "edit", editId: id, editIsNew: false, editParentOf: null, addKind: null,
       draftName: p.placeholder ? "" : p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
       draftNote: p.note || "", draftPartners: partners, draftCoParent: p.coParent || "",
-      draftMore: !!(partners.length || p.born || p.died || p.place || p.note)
+      draftMore: !!(partners.length || p.born || p.died || p.place || p.note),
+      draftPhoto: p.photo || ""
     });
+  },
+  // Read an image file, center-crop to a square and downscale to a small thumbnail
+  // (256px JPEG) so it stays light in the board data that syncs to everyone.
+  readPhoto(file, cb) {
+    if (!file) { cb(null); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const size = 256, c = document.createElement("canvas");
+          c.width = size; c.height = size;
+          const ctx = c.getContext("2d");
+          const m = Math.min(img.width, img.height);
+          ctx.drawImage(img, (img.width - m) / 2, (img.height - m) / 2, m, m, 0, 0, size, size);
+          cb(c.toDataURL("image/jpeg", 0.72));
+        } catch (e) { cb(null); }
+      };
+      img.onerror = () => cb(null);
+      img.src = reader.result;
+    };
+    reader.onerror = () => cb(null);
+    reader.readAsDataURL(file);
+  },
+  // Open the OS file picker imperatively (avoids vdom change-event quirks on file inputs).
+  pickPhoto() {
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = "image/*";
+    input.onchange = () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      this.readPhoto(f, (url) => { if (url) this.setState({ draftPhoto: url }); else this.setState({ toast: { text: "Couldn't read that image — try another", i: "!", c: "#8c491a" } }, () => this.flashToast()); });
+    };
+    input.click();
   },
   saveEdit() {
     const s = this.state, name = s.draftName.trim();
@@ -784,7 +819,8 @@ const App = {
     const fields = {
       name, born: s.draftBorn, died: s.draftDied, place: s.draftPlace, note: s.draftNote,
       partners: partners, partner: null,               // partner[] is authoritative; clear legacy single
-      coParent: s.draftCoParent ? s.draftCoParent : null
+      coParent: s.draftCoParent ? s.draftCoParent : null,
+      photo: s.draftPhoto || null
     };
     this.pushUndo();
     this.setState(st => {
@@ -937,7 +973,7 @@ const App = {
           rows.push({
             isCard: true, isAdd: false, id: p.id, name: p.name, years: this.years(p),
             placeholder: !!p.placeholder,
-            initials: p.placeholder ? "＋" : this.initials(p.name), detail: detail,
+            initials: p.placeholder ? "＋" : this.initials(p.name), photo: p.placeholder ? null : (p.photo || null), detail: detail,
             partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
             coParent: p.coParent || null,
             childOf: (flat && parentName) ? parentName : null,   // shown only in the generation view
@@ -1059,6 +1095,7 @@ const App = {
             id: p.id, num: String(i + 1).padStart(2, "0"),
             placeholder: !!p.placeholder,
             initials: p.placeholder ? "＋" : this.initials(p.name),
+            photo: p.placeholder ? null : (p.photo || null),
             name: p.name, years: this.years(p),
             // when a single generation is shown, name each person's parent (like the Branches view)
             childOf: (only !== null && p.parentId) ? ((s.people.find(x => x.id === p.parentId) || {}).name || null) : null,
@@ -1332,6 +1369,9 @@ const App = {
       editSub: s.editIsNew ? "A name is all we need. Details any time later." : "Everyone on the board sees the change.",
       draftName: s.draftName, draftBorn: s.draftBorn, draftDied: s.draftDied,
       draftPlace: s.draftPlace, draftNote: s.draftNote, draftMore: s.draftMore,
+      draftPhoto: s.draftPhoto,
+      onPickPhoto: () => this.pickPhoto(),
+      onRemovePhoto: () => this.setState({ draftPhoto: "" }),
       onDraftName: e => this.setState({ draftName: e.target.value }),
       onDraftBorn: e => this.setState({ draftBorn: e.target.value }),
       onDraftDied: e => this.setState({ draftDied: e.target.value }),
@@ -1819,7 +1859,9 @@ function rowsPerson(p, g) {
     h("div", { style: "width:7px; flex:none; background:" + g.color }),
     btn({ onClick: p.onOpen, style: "flex:1; min-width:0; text-align:left; display:flex; align-items:center; gap:12px; padding:11px 8px 11px 12px; border:none; background:transparent; cursor:pointer" },
       h("span", { style: "flex:none; width:20px; font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:700; color:#b3a894" }, p.num),
-      h("span", { style: "flex:none; width:44px; height:44px; border-radius:999px; background:" + g.soft + "; border:2.5px solid " + g.color + "; color:" + g.color + "; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center" }, p.initials),
+      p.photo
+        ? h("img", { src: p.photo, alt: p.name, style: "flex:none; width:44px; height:44px; border-radius:999px; object-fit:cover; border:2.5px solid " + g.color })
+        : h("span", { style: "flex:none; width:44px; height:44px; border-radius:999px; background:" + g.soft + "; border:2.5px solid " + g.color + "; color:" + g.color + "; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center" }, p.initials),
       h("span", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:4px" },
         h("span", { style: "display:flex; align-items:baseline; gap:8px; flex-wrap:wrap" },
           h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; overflow-wrap:anywhere; min-width:0; " + (p.placeholder ? "color:#a99a86; font-style:italic" : "color:#201e1d") }, p.name),
@@ -1885,7 +1927,9 @@ function row(r) {
         h("span", { style: "font-size:11px; font-weight:800; color:" + r.color }, String(r.below))
       ) : null,
       btn({ onClick: r.onSelect, style: "flex:1; min-width:0; text-align:left; display:flex; gap:11px; align-items:flex-start; padding:12px 10px 12px 12px; border:none; background:transparent; cursor:pointer" },
-        h("span", { style: "flex:none; width:44px; height:44px; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
+        r.photo
+          ? h("img", { src: r.photo, alt: r.name, style: "flex:none; width:44px; height:44px; border-radius:999px; object-fit:cover; border:2.5px solid " + r.color })
+          : h("span", { style: "flex:none; width:44px; height:44px; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
         h("span", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:5px" },
           h("span", { style: "display:flex; align-items:baseline; gap:8px; flex-wrap:wrap" },
             h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; overflow-wrap:anywhere; min-width:0; " + (r.placeholder ? "color:#a99a86; font-style:italic" : "color:#201e1d") }, r.name),
@@ -2001,7 +2045,9 @@ function projRow(r) {
   if (r.showSpine) inner.push(h("div", { key: "spine", style: "position:absolute; left:" + r.ribLeft + "px; top:30px; bottom:0; width:4px; background:" + r.ribColor }));
   inner.push(h("div", { key: "card", style: "display:flex; align-items:center; gap:14px; padding:10px 20px 10px 0; border-radius:20px; border:2px solid " + r.borderColor + "; background:#f9f4ed; overflow:hidden" },
     h("div", { style: "width:8px; align-self:stretch; background:" + r.color }),
-    h("div", { style: "width:40px; height:40px; flex:none; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
+    r.photo
+      ? h("img", { src: r.photo, alt: r.name, style: "width:40px; height:40px; flex:none; border-radius:999px; object-fit:cover; border:2.5px solid " + r.color })
+      : h("div", { style: "width:40px; height:40px; flex:none; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
     h("div", { style: "display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; min-width:0" },
       h("span", { style: "font-family:Caprasimo, serif; font-size:20px; overflow-wrap:anywhere; min-width:0" }, r.name),
       h("span", { style: "font-size:13px; color:#82796a" }, r.years),
@@ -2051,10 +2097,15 @@ function editSheet(V) {
       h("div", { style: "font-size:13px; color:#645c50" }, V.editSub)
     ),
     h("div", { style: "display:flex; align-items:center; gap:14px" },
-      h("div", { style: "width:64px; height:64px; flex:none; border-radius:999px; background:repeating-linear-gradient(45deg,#dcd3c4 0 6px,#eee7db 6px 12px)" }),
+      V.draftPhoto
+        ? h("img", { src: V.draftPhoto, alt: "portrait", style: "width:64px; height:64px; flex:none; border-radius:999px; object-fit:cover; border:2px solid #dcd3c4" })
+        : h("div", { style: "width:64px; height:64px; flex:none; border-radius:999px; background:repeating-linear-gradient(45deg,#dcd3c4 0 6px,#eee7db 6px 12px)" }),
       h("div", { style: "display:flex; flex-direction:column; gap:6px" },
         h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "portrait"),
-        btn({ style: "font-size:13px; font-weight:700; padding:9px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Add a photo")
+        h("div", { style: "display:flex; align-items:center; gap:8px" },
+          btn({ onClick: V.onPickPhoto, style: "font-size:13px; font-weight:700; padding:9px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, V.draftPhoto ? "Change photo" : "Add a photo"),
+          V.draftPhoto ? btn({ onClick: V.onRemovePhoto, title: "Remove photo", style: "font-size:13px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove") : null
+        )
       )
     ),
     inp({ value: V.draftName, onChange: V.onDraftName, placeholder: "Full name", style: "font-size:20px; padding:16px 20px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
