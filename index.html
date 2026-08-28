@@ -845,7 +845,7 @@ const App = {
         sheet: null, deleteId: null, selected: null,
         log: this.logEntry(s, "removed", gone.name, "remove",
           kids ? "kept the " + kids + " " + (kids === 1 ? "child" : "children") + " below, moved up a generation" : null),
-        toast: { text: "Removed " + first + " — their branch stayed. Undo to bring them back.", i: "↶", c: "#8c491a" }
+        toast: { text: "Removed " + first + " — their branch stayed.", i: "↶", c: "#8c491a" }
       }));
     } else {
       const ids = [id].concat(this.descendants(id));
@@ -856,7 +856,7 @@ const App = {
         sheet: null, deleteId: null, selected: null,
         log: this.logEntry(s, "removed", gone.name, "remove",
           extra ? "and the " + extra + " " + (extra === 1 ? "person" : "people") + " below them" : null),
-        toast: { text: "Removed. Undo brings them back.", i: "↶", c: "#8c491a" }
+        toast: { text: "Removed.", i: "↶", c: "#8c491a" }
       }));
     }
     this.flashToast();
@@ -1043,6 +1043,37 @@ const App = {
     }
     const rows = this.flatten(false);
     const anyMatch = rows.some(r => r.isCard && r.dim === 1);
+    // Rows view — everyone grouped by generation (a flat, addable directory)
+    const genGroups = (() => {
+      const q = s.query.trim().toLowerCase();
+      const matches = p => !q || [p.name, p.place, p.note, this.partnersOf(p).map(pp => pp.name).join(" "), p.coParent, p.born, p.addedBy].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
+      const only = (typeof s.genView === "number") ? s.genView : null;   // gen filter: null = all
+      const byGen = {};
+      s.people.forEach(p => { if (!matches(p)) return; const d = this.depthOf(p); (byGen[d] = byGen[d] || []).push(p); });
+      return Object.keys(byGen).map(Number).sort((a, b) => a - b).filter(d => only === null || d === only).map(d => {
+        const g = this.gen(d);
+        return {
+          gen: d, label: "Gen " + (d + 1), color: g.color, soft: g.soft,
+          countLabel: byGen[d].length + " " + (byGen[d].length === 1 ? "person" : "people"),
+          people: byGen[d].map((p, i) => ({
+            id: p.id, num: String(i + 1).padStart(2, "0"),
+            placeholder: !!p.placeholder,
+            initials: p.placeholder ? "＋" : this.initials(p.name),
+            name: p.name, years: this.years(p),
+            // when a single generation is shown, name each person's parent (like the Branches view)
+            childOf: (only !== null && p.parentId) ? ((s.people.find(x => x.id === p.parentId) || {}).name || null) : null,
+            partners: this.partnersOf(p).map(pp => pp.name).filter(Boolean),
+            coParent: p.coParent || null,
+            offspring: this.below(p.id),
+            byLine: p.placeholder ? "tap to fill in" : "added by " + (p.addedBy || "someone"),
+            byColor: p.placeholder ? "#c67139" : "#c0b6a5",
+            onOpen: () => this.openEdit(p.id),
+            onAddChild: () => this.openNew(p.id, "child"),
+          })),
+        };
+      });
+    })();
+    const rowsSummary = total + " " + (total === 1 ? "person" : "people") + " · " + gens + " " + (gens === 1 ? "gen" : "gens");
     const contributors = [
       { name: (s.myName || "You") + " (you)", i: this.initials(s.myName || "You"), c: "#201e1d", when: "now" },
       { name: "Rita", i: "R", c: "#c67139", when: "1m ago" },
@@ -1148,12 +1179,7 @@ const App = {
       onExitProjection: () => this.setState({ projection: false }),
       bigRows: this.flatten(true),
       bigLog: s.log.slice(0, 14).map(l => ({ who: l.who, i: l.i, c: l.c, verb: l.verb, target: l.target, when: l.when, verbColor: l.kind === "remove" ? "#8c491a" : (l.kind === "add" ? "#56633f" : "#645c50") })),
-      zoom: s.zoom, zoomLabel: Math.round(s.zoom * 100) + "%",
-      onZoomIn: () => this.setState({ zoom: Math.min(1.5, +(s.zoom + 0.1).toFixed(2)) }),
-      onZoomOut: () => this.setState({ zoom: Math.max(0.7, +(s.zoom - 0.1).toFixed(2)) }),
-      onUndo: () => this.setState(st => st.undoStack.length
-        ? { people: st.undoStack[st.undoStack.length - 1], undoStack: st.undoStack.slice(0, -1), log: this.logEntry(st, "undid", "the last change", "undo"), toast: { text: "Put back the way it was", i: "↶", c: "#7a8a5e" } }
-        : { toast: { text: "Nothing to undo yet", i: "↶", c: "#82796a" } }, () => this.flashToast()),
+      zoom: s.zoom,
       query: s.query,
       onQuery: e => this.setState({ query: e.target.value }),
       onExpandAll: () => this.setState({ collapsed: {} }),
@@ -1219,7 +1245,9 @@ const App = {
       isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
       isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu", isAssistantSheet: s.sheet === "assistant",
       isRadial: s.viewMode === "radial",
-      onToggleView: () => { const next = s.viewMode === "radial" ? "list" : "radial"; this.setState({ viewMode: next, radialSel: null, radialFocus: null, sheet: null }); track("view_changed", { view: next }); },
+      isRows: s.viewMode === "rows",
+      genGroups: genGroups, rowsSummary: rowsSummary,
+      onSetView: (m) => () => { if (this.state.viewMode === m) return; this.setState({ viewMode: m, radialSel: null, radialFocus: null, sheet: null }); track("view_changed", { view: m }); },
       onRadialClick: (e) => {
         const g = e.target && e.target.closest ? e.target.closest("[data-node]") : null;
         const id = g ? g.getAttribute("data-node") : null;
@@ -1334,7 +1362,7 @@ const App = {
           ? (delP.name + " has " + delBelow + " " + (delBelow === 1 ? "person" : "people") + " below them. Remove just " + delP.name.split(" ")[0] + " and "
               + (delParentFirst ? "their children move up under " + delParentFirst : "their children become their own branch")
               + " — or remove " + delP.name.split(" ")[0] + " and everyone below." + (s.shared ? " Everyone sees it." : ""))
-          : (delP.name + " comes off the tree" + (s.shared ? ", on everyone’s screen" : "") + ". Undo brings them back.")
+          : (delP.name + " comes off the tree" + (s.shared ? ", on everyone’s screen" : "") + ". This can’t be undone.")
       ) : "",
       onRemoveOne: () => this.removePerson("one"),
       onRemoveAll: () => this.removePerson("subtree"),
@@ -1624,7 +1652,7 @@ function viewApp(V) {
   if (V.wide) return appDesktop(V);
   return h("div", { key: "app", style: "flex:1; display:flex; flex-direction:column; min-height:0; position:relative" },
     appHeader(V),
-    V.isRadial ? appRadial(V) : appTree(V),
+    V.isRadial ? appRadial(V) : V.isRows ? rowsView(V) : appTree(V),
     appToast(V),
     appScrim(V),
     sheets(V)
@@ -1636,7 +1664,7 @@ function appDesktop(V) {
   return h("div", { key: "app", style: "flex:1; min-height:0; display:flex; position:relative" },
     h("div", { style: "flex:1; min-width:0; max-width:680px; display:flex; flex-direction:column; min-height:0" },
       appHeader(V, true),
-      V.isRadial ? appRadial(V) : appTree(V)
+      V.isRadial ? appRadial(V) : V.isRows ? rowsView(V) : appTree(V)
     ),
     appSidebar(V),
     appToast(V),
@@ -1697,6 +1725,7 @@ function appSidebar(V) {
 
 function appHeader(V, wide) {
   const iconBtn = "flex:none; display:flex; align-items:center; justify-content:center; border-radius:999px; cursor:pointer;";
+  const seg = on => "flex:none; font-size:13px; font-weight:700; padding:7px 14px; border-radius:999px; border:none; cursor:pointer; white-space:nowrap; background:" + (on ? "#201e1d" : "transparent") + "; color:" + (on ? "#f5ead8" : "#645c50");
   return h("div", { style: "flex:none; background:#f9f4ed; border-bottom:1.5px solid #dcd3c4; padding:8px 16px 9px; display:flex; flex-direction:column; gap:7px" },
     // Row 1 — home + boards
     h("div", { style: "display:flex; align-items:center; gap:8px" },
@@ -1711,23 +1740,28 @@ function appHeader(V, wide) {
       btn({ onClick: V.onOpenMenu, title: "Log, expand, collapse, live activity", "aria-label": "More", style: iconBtn + " width:32px; height:32px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:20px; line-height:1", hover: "border-color:#c67139; color:#8c491a" }, "⋮"),
       btn({ onClick: V.onOpenShareMenu, title: "Share & download", "aria-label": "Share", style: iconBtn + " width:34px; height:34px; border:none; background:#c67139; color:#fff2eb; font-size:15px", hover: "background:#b2622d" }, "↗")
     ),
-    // Row 3 — zoom + small Undo + Save (list view only)
-    V.isRadial ? null : h("div", { style: "display:flex; align-items:center; gap:6px" },
+    // View toggle (Branches | Rows | Radial) — shown in EVERY view so you can always switch;
+    // Expand/Collapse sit alongside it, but only in Branches view where they apply.
+    h("div", { style: "display:flex; align-items:center; gap:9px; flex-wrap:wrap" },
+      h("span", { style: "flex:none; font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.09em; font-weight:700; color:#a49a89" }, "VIEW"),
       h("div", { style: "flex:none; display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#ebddc5" },
-        btn({ onClick: V.onZoomOut, style: "width:30px; height:30px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:17px; font-weight:700; cursor:pointer" }, "−"),
-        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#645c50; width:38px; text-align:center" }, V.zoomLabel),
-        btn({ onClick: V.onZoomIn, style: "width:30px; height:30px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:17px; font-weight:700; cursor:pointer" }, "+")
+        btn({ onClick: V.onSetView("list"), title: "The indented family tree — add and edit here", style: seg(!V.isRadial && !V.isRows) }, "Branches"),
+        btn({ onClick: V.onSetView("rows"), title: "Everyone by generation — add and edit here", style: seg(V.isRows) }, "Rows"),
+        btn({ onClick: V.onSetView("radial"), title: "Circular read-only overview", style: seg(V.isRadial) }, "Radial")
       ),
-      btn({ onClick: V.onUndo, style: "flex:none; font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer", hover: "border-color:#c67139" }, "Undo"),
-      btn({ onClick: V.onOpenUpgrade, style: "flex:1; font-size:13px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
+      (!V.isRadial && !V.isRows) ? h("div", { style: "flex:none; display:flex; align-items:center; gap:6px; margin-left:auto" },
+        btn({ onClick: V.onExpandAll, title: "Expand every branch", style: "flex:none; font-size:12px; font-weight:700; padding:8px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "Expand"),
+        btn({ onClick: V.onCollapseAll, title: "Collapse every branch", style: "flex:none; font-size:12px; font-weight:700; padding:8px 13px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "Collapse")
+      ) : null
     ),
-    // Row 4 — search + Project (list view only)
-    V.isRadial ? null : h("div", { style: "display:flex; gap:7px" },
+    // Row 3 — search + Project + Save (list view only)
+    V.isRadial ? null : h("div", { style: "display:flex; align-items:center; gap:7px" },
       inp({ value: V.query, onChange: V.onQuery, placeholder: "Find a name, a town, a year…", style: "flex:1; min-width:0; font-size:14px; padding:11px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
       btn({ onClick: V.onOpenProjection, title: "Full-screen live view for a TV or projector", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:10px 14px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
-        h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project"))
+        h("span", { style: "font-size:13px" }, "⤢"), h("span", null, "Project")),
+      btn({ onClick: V.onOpenUpgrade, style: "flex:none; font-size:13px; font-weight:800; padding:11px 18px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
     ),
-    // Row 5 — generation filters, scroll sideways (list view only)
+    // Row 5 — generation filters, scroll sideways (Branches + Rows views)
     V.isRadial ? null : h("div", { style: "display:flex; align-items:center; gap:4px" },
       btn({ id: "gen-arrow-left", onClick: () => { const e = document.getElementById("gen-scroll"); if (e) e.scrollBy({ left: -200, behavior: "smooth" }); }, title: "Scroll generations left", "aria-label": "Scroll left",
         style: "display:none; flex:none; width:26px; height:26px; align-items:center; justify-content:center; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:16px; line-height:1; cursor:pointer" }, "‹"),
@@ -1757,12 +1791,64 @@ function appTree(V) {
   );
 }
 
+// Rows view — everyone grouped by generation, add/edit inline (no branch connectors).
+function rowsView(V) {
+  const q = (V.query || "").trim();
+  return h("div", { style: "flex:1; overflow:auto; padding:14px 16px 26px", class: "noscroll" },
+    // summary line
+    h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:12px; letter-spacing:.04em; color:#645c50; padding-bottom:12px; border-bottom:1.5px solid #ece2d1" }, V.rowsSummary),
+    V.genGroups.length
+      ? V.genGroups.map((g, gi) => h("div", { key: "grp" + gi, style: "display:flex; flex-direction:column; gap:10px; padding-top:16px" },
+          h("div", { style: "display:flex; align-items:center; gap:10px" },
+            h("span", { style: "width:22px; height:6px; border-radius:999px; display:block; background:" + g.color }),
+            h("span", { style: "font-family:Caprasimo, serif; font-size:20px; color:#201e1d" }, g.label),
+            h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#82796a" }, g.countLabel)
+          ),
+          g.people.map(p => rowsPerson(p, g))
+        ))
+      : h("div", { style: "padding:26px 4px; font-size:14px; color:#645c50; line-height:1.55" },
+          q ? "Nobody matches “" + q + "”. Try a first name on its own." : "No names yet. Add your first relative below."),
+    h("div", { style: "padding-top:16px" },
+      btn({ onClick: V.onAddRoot, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:16px 18px; border-radius:24px; border:2px dashed #c0b6a5; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "+ Start another branch of the family")
+    )
+  );
+}
+
+function rowsPerson(p, g) {
+  return h("div", { key: p.id, id: "node-" + p.id, style: "display:flex; align-items:stretch; border-radius:20px; border:1.5px solid " + (p.placeholder ? "#e6c8a8" : "#dcd3c4") + "; background:#f9f4ed; overflow:hidden; box-shadow:0 1px 2px rgba(46,43,37,.10)" },
+    h("div", { style: "width:7px; flex:none; background:" + g.color }),
+    btn({ onClick: p.onOpen, style: "flex:1; min-width:0; text-align:left; display:flex; align-items:center; gap:12px; padding:11px 8px 11px 12px; border:none; background:transparent; cursor:pointer" },
+      h("span", { style: "flex:none; width:20px; font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:700; color:#b3a894" }, p.num),
+      h("span", { style: "flex:none; width:44px; height:44px; border-radius:999px; background:" + g.soft + "; border:2.5px solid " + g.color + "; color:" + g.color + "; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center" }, p.initials),
+      h("span", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:4px" },
+        h("span", { style: "display:flex; align-items:baseline; gap:8px; flex-wrap:wrap" },
+          h("span", { style: "font-family:Caprasimo, serif; font-size:17px; line-height:1.15; overflow-wrap:anywhere; min-width:0; " + (p.placeholder ? "color:#a99a86; font-style:italic" : "color:#201e1d") }, p.name),
+          p.years ? h("span", { style: "font-size:12px; color:#82796a" }, p.years) : null
+        ),
+        p.childOf ? h("span", { style: "align-self:flex-start; display:flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; background:" + g.soft + "; font-size:11px; font-weight:700; color:" + g.color },
+          h("span", { style: "font-size:10px" }, "↑"), h("span", null, "child of " + p.childOf)
+        ) : null,
+        (p.partners.length || p.coParent || p.offspring) ? h("span", { style: "display:flex; align-items:center; gap:8px; flex-wrap:wrap" },
+          p.partners.map((nm, i) => h("span", { key: "pt" + i, style: "display:flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; background:" + g.soft },
+            h("span", { style: "font-size:11px; color:" + g.color }, "♥"),
+            h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, nm)
+          )),
+          p.coParent ? h("span", { style: "font-size:11px; font-style:italic; color:#82796a" }, "with " + p.coParent) : null,
+          p.offspring ? h("span", { style: "font-size:12px; color:#645c50" }, p.offspring + " offspring") : null
+        ) : null,
+        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + p.byColor }, p.byLine)
+      )
+    ),
+    btn({ onClick: p.onAddChild, title: "Add a child of " + p.name, "aria-label": "Add a child", style: "flex:none; width:50px; border:none; background:" + g.color + "; color:#fff2eb; font-size:24px; font-weight:700; cursor:pointer" }, "+")
+  );
+}
+
 // Radial (circular) view — read-only overview. The SVG itself is injected into
 // #radial-host by App.syncRadial(); this renders the frame, note, and detail.
 function appRadial(V) {
   return h("div", { key: "radial", class: "noscroll", style: "flex:1; min-height:0; overflow:auto; padding:12px 16px 26px; display:flex; flex-direction:column; gap:12px" },
     h("div", { key: "rnote", style: "padding:10px 14px; border-radius:16px; background:#fff2eb; border:1.5px solid #f6a06b; font-size:12px; line-height:1.5; color:#8c491a" },
-      "Read-only overview. Tap a wedge to zoom into that branch (names get bigger); tap the centre to zoom back out. Switch to List view (⋮ menu) to add or edit."),
+      "Read-only overview — you can’t add or edit people here. Tap a wedge to zoom into that branch (names get bigger); tap the centre to zoom back out. Switch to Rows view up top to add or edit."),
     V.radialFocusPath ? h("div", { key: "rbc", class: "noscroll", style: "display:flex; align-items:center; gap:4px; flex-wrap:wrap; overflow-x:auto" },
       V.radialFocusPath.map((seg, i) => [
         i ? h("span", { key: "sep" + i, style: "color:#c0b6a5; font-size:12px" }, "›") : null,
@@ -2131,13 +2217,7 @@ function menuSheet(V) {
       h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live"),
       h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink + " · renews " + V.renewDate)
     ) : null,
-    btn({ onClick: V.onToggleView, style: item, hover: "border-color:#c67139" },
-      h("span", { style: "font-size:17px" }, V.isRadial ? "☰" : "◎"),
-      h("span", { style: "display:flex; flex-direction:column; gap:1px" },
-        h("span", null, V.isRadial ? "Switch to List view" : "Switch to Radial view"),
-        h("span", { style: "font-size:11px; font-weight:600; color:#82796a" }, V.isRadial ? "The scrollable list you add and edit in" : "A circular read-only overview of everyone")
-      )
-    ),
+    /* Assistant — hidden for now (re-enable this button to bring it back)
     btn({ onClick: V.onOpenAssistant, style: item + "; border-color:#c67139; background:#fff2eb", hover: "border-color:#b2622d" },
       h("span", { style: "font-size:17px" }, "✨"),
       h("span", { style: "display:flex; flex-direction:column; gap:1px" },
@@ -2145,13 +2225,10 @@ function menuSheet(V) {
         h("span", { style: "font-size:11px; font-weight:600; color:#82796a" }, "Draft an obituary or a seating chart from your tree")
       )
     ),
+    */
     btn({ onClick: V.onOpenLog, style: item, hover: "border-color:#c67139" },
       hamburgerIcon(), h("span", { style: "flex:1" }, "Change log"),
       h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#82796a" }, String(V.logCount))
-    ),
-    h("div", { style: "display:flex; gap:10px" },
-      btn({ onClick: V.onExpandAll, style: item + "; justify-content:center", hover: "border-color:#c67139" }, "Expand all"),
-      btn({ onClick: V.onCollapseAll, style: item + "; justify-content:center", hover: "border-color:#c67139" }, "Collapse all")
     ),
     h("div", { style: "display:flex; flex-direction:column; gap:9px" },
       h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Live activity"),
