@@ -71,8 +71,8 @@
   .proj {
     position: fixed; inset: 0; z-index: 60;
     background: radial-gradient(120% 120% at 50% 0%, #f7eddb 0%, #efe2c9 100%);
-    display: flex; flex-direction: column; gap: 22px;
-    padding: clamp(20px, 3vw, 46px);
+    display: flex; flex-direction: column; gap: clamp(10px, 1.4vw, 16px);
+    padding: clamp(12px, 1.8vw, 26px) clamp(14px, 2.2vw, 34px) clamp(16px, 2.2vw, 30px);
     overflow: hidden;
     font-family: Figtree, system-ui, sans-serif; color: #201e1d;
     animation: riseIn .35s ease;
@@ -2092,7 +2092,7 @@ function projection(V) {
   return h("div", { key: "proj", class: "proj" },
     // top bar
     h("div", { style: "flex:none; display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap" },
-      h("div", { style: "display:flex; flex-direction:column; gap:8px; min-width:0; flex:1 1 240px" },
+      h("div", { style: "display:flex; flex-direction:column; gap:4px; min-width:0; flex:1 1 240px" },
         h("div", { style: "display:flex; align-items:center; gap:12px; flex-wrap:wrap" },
           h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(11px,1.1vw,14px); letter-spacing:.16em; text-transform:uppercase; color:#8c491a" }, "Board " + V.room + " · live"),
           h("div", { style: "display:flex; align-items:center; gap:8px; padding:5px 12px; border-radius:999px; background:#f0fae1; border:1.5px solid #7a8a5e" },
@@ -2100,12 +2100,12 @@ function projection(V) {
             h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:700; color:#3d472b" }, V.isPaid ? V.liveLink + " · always live" : "updating in real time")
           )
         ),
-        h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(32px,5vw,60px); line-height:1" }, V.familyName || "Our Family")
+        h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(20px,3.2vw,36px); line-height:1.05" }, V.familyName || "Our Family")
       ),
       h("div", { style: "text-align:right; flex:none; display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-left:auto" },
         h("div", null,
-          h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(38px,5vw,64px); color:#c67139; line-height:1" }, String(V.peopleCount)),
-          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(9px,.9vw,12px); letter-spacing:.14em; text-transform:uppercase; color:#82796a" }, "people so far")
+          h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(22px,3.2vw,38px); color:#c67139; line-height:1" }, String(V.peopleCount)),
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(8px,.8vw,11px); letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "people so far")
         ),
         h("div", { title: "Zoom the tree — smaller fits more branches on screen", style: "flex:none; display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#ebddc5" },
           btn({ onClick: V.onProjZoomOut, "aria-label": "Zoom out — fit more branches", style: "width:34px; height:34px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:19px; font-weight:700; cursor:pointer; line-height:1" }, "−"),
