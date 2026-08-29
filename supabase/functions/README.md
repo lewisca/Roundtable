@@ -32,6 +32,11 @@ alter table public.boards
   add column if not exists stripe_customer_id     text,
   add column if not exists stripe_subscription_id text;
 
+-- IMPORTANT: `add column if not exists` above WON'T change the default on a table
+-- that already had expires_at (e.g. the old 3-day version). Set it explicitly:
+alter table public.boards
+  alter column expires_at set default (now() + interval '7 days');
+
 -- New default is 7 days; move any existing 3-day rows out to a week from creation.
 update public.boards set expires_at = created_at + interval '7 days'
   where not is_paid and expires_at < created_at + interval '7 days';
