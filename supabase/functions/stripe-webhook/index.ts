@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
       }
 
       // Cancelled / lapsed: drop the paid flag so the board reverts to its
-      // expiry date (it goes dark once expires_at passes, like a free board).
+      // expiry date (it drops back to read-only once expires_at passes).
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         await admin.from("boards").update({ is_paid: false }).eq("stripe_subscription_id", sub.id);

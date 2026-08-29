@@ -530,6 +530,7 @@ const App = {
     // Demo board stays local-only; wait until the initial remote load is done
     // so a freshly-entered empty board can't clobber the real one.
     if (!sb || room === DEMO_ROOM || !this._remoteReady) return;
+    if (this.frozen()) return; // read-only after the trial: never write (server blocks it too)
     const json = JSON.stringify(snap);
     if (json === this._lastWriteJSON) return; // board data unchanged (UI-only edit)
     clearTimeout(this._saveTimer);
@@ -692,6 +693,18 @@ const App = {
     const mo = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()];
     return mo + " " + d.getDate() + ", " + d.getFullYear();
   },
+  // After the free week the board becomes read-only: everything visible, nothing
+  // editable, until someone pays (which flips subscribed and unfreezes instantly).
+  frozen() {
+    const s = this.state;
+    return !s.subscribed && !!s.expiresAt && new Date(s.expiresAt).getTime() <= Date.now();
+  },
+  // Guard mutating actions. Returns true (and nudges to reactivate) when frozen.
+  blockedByFreeze() {
+    if (!this.frozen()) return false;
+    this.setState({ sheet: "upgrade", payError: null, selected: null });
+    return true;
+  },
   fmtDate(iso) {
     if (!iso) return "";
     const d = new Date(iso);
@@ -753,6 +766,7 @@ const App = {
     ];
   },
   openNew(parentId, kind) {
+    if (this.blockedByFreeze()) return;
     this.pushUndo();
     this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: parentId, editParentOf: null, addKind: kind || null, draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false, draftPhoto: "" });
   },
@@ -760,12 +774,13 @@ const App = {
   // (or becomes a root), and `id` becomes its child. Handles "I added myself
   // first, now add my parent" and any missed parent on any node.
   openParent(id) {
+    if (this.blockedByFreeze()) return;
     this.pushUndo();
     const child = this.state.people.find(p => p.id === id);
     this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: [id], addKind: "parent", draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false, draftPhoto: "" });
   },
   // The + button on a card opens a small menu to add a child, parent, or sibling.
-  openAddMenu(id) { this.setState({ sheet: "add", addForId: id, selected: id }); },
+  openAddMenu(id) { if (this.blockedByFreeze()) return; this.setState({ sheet: "add", addForId: id, selected: id }); },
   // Optional: email/text the board code + expiry to the person on create/join.
   // Best-effort — needs the `notify-board` Edge Function deployed (see README).
   async notifyBoard(code, contact) {
@@ -777,7 +792,7 @@ const App = {
     } catch (e) {}
   },
   // Adding a parent when the person has siblings: choose who the parent belongs to.
-  openParentPick(id) { this.setState({ sheet: "parentpick", parentPickFor: id, parentPickSel: { [id]: true } }); },
+  openParentPick(id) { if (this.blockedByFreeze()) return; this.setState({ sheet: "parentpick", parentPickFor: id, parentPickSel: { [id]: true } }); },
   confirmParentPick() {
     const s = this.state;
     const ids = Object.keys(s.parentPickSel).filter(k => s.parentPickSel[k]);
@@ -790,6 +805,7 @@ const App = {
     });
   },
   openEdit(id) {
+    if (this.blockedByFreeze()) return;
     const p = this.state.people.find(x => x.id === id);
     const partners = this.partnersOf(p).map(pp => ({ name: pp.name || "", born: pp.born || "", died: pp.died || "", place: pp.place || "" }));
     this.setState({
@@ -893,6 +909,7 @@ const App = {
     this.setState({ projection: false, castHelp: false });
   },
   saveEdit() {
+    if (this.frozen()) return;
     const s = this.state, name = s.draftName.trim();
     if (!name) return;
     const partners = (s.draftPartners || [])
@@ -945,6 +962,7 @@ const App = {
   },
   clock() { const d = new Date(); let hh = d.getHours() % 12 || 12; return hh + ":" + String(d.getMinutes()).padStart(2, "0"); },
   removePerson(mode) {
+    if (this.frozen()) return;
     const id = this.state.deleteId;
     const gone = this.state.people.find(p => p.id === id);
     if (!gone) return;
@@ -999,9 +1017,9 @@ const App = {
       return other ? { otherId: otherId, otherName: other.name, type: l.type } : null;
     }).filter(Boolean);
   },
-  openConnect(id) { this.setState({ sheet: "connect", connectFor: id, connectType: "spouse" }); },
+  openConnect(id) { if (this.blockedByFreeze()) return; this.setState({ sheet: "connect", connectFor: id, connectType: "spouse" }); },
   addLink(a, b, type) {
-    if (!a || !b || a === b) return;
+    if (this.frozen() || !a || !b || a === b) return;
     this.pushUndo();
     this.setState(st => {
       const dup = (st.links || []).some(l => l.type === type && ((l.a === a && l.b === b) || (l.a === b && l.b === a)));
@@ -1017,6 +1035,7 @@ const App = {
     }, () => this.flashToast());
   },
   unlink(a, b, type) {
+    if (this.frozen()) return;
     this.pushUndo();
     this.setState(st => ({
       links: (st.links || []).filter(l => !(l.type === type && ((l.a === a && l.b === b) || (l.a === b && l.b === a))))
@@ -1078,6 +1097,7 @@ const App = {
             dim: q && !matches(p) ? 0.32 : 1,
             hasKids: !flat && kids.length > 0, below: this.below(p.id),
             chevron: collapsed ? "▸" : "▾",
+            canEdit: !this.frozen(),
             selected: s.selected === p.id,
             flagged: !!p.flag,
             onFlag: () => this.setState({ sheet: "flag" }),
@@ -1171,6 +1191,7 @@ const App = {
             offspring: this.below(p.id),
             byLine: p.placeholder ? "tap to fill in" : "added by " + (p.addedBy || "someone"),
             byColor: p.placeholder ? "#c67139" : "#c0b6a5",
+            canEdit: !this.frozen(),
             onOpen: () => this.openEdit(p.id),
             onAddChild: () => this.openNew(p.id, "child"),
           })),
@@ -1269,7 +1290,7 @@ const App = {
       room: s.room, shared: s.shared,
       boardTitle: s.joining ? "Join the family board" : "Create your board",
       familyName: s.familyName,
-      onFamilyName: e => this.setState({ familyName: e.target.value }),
+      onFamilyName: e => { if (this.frozen()) return; this.setState({ familyName: e.target.value }); },
       countLine: (typeof s.genView === "number")
         ? ("Generation " + (s.genView + 1) + " · " + (genCounts[s.genView] || 0) + " " + ((genCounts[s.genView] || 0) === 1 ? "person" : "people"))
         : (total === 0 && anyPlaceholder ? "Tap a prompt below to start your tree" : (total + " people · " + gens + " gens")),
@@ -1409,10 +1430,11 @@ const App = {
       onOpenUpgrade: () => this.setState({ sheet: "upgrade", payError: null }),
       onDownloadPdf: () => { this.downloadTree("pdf", total); track("tree_downloaded", { format: "pdf" }); },
       onDownloadImage: () => { this.downloadImage(total); track("tree_downloaded", { format: "image" }); },
-      expiryDate: s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(3),
+      expiryDate: s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(7),
       renewDate: s.paidUntil ? this.fmtDate(s.paidUntil) : (s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(365)),
       isPaid: s.subscribed, isUnpaid: !s.subscribed,
-      saveButtonLabel: s.subscribed ? "Link" : "Save",
+      isFrozen: this.frozen(), canEdit: !this.frozen(),
+      saveButtonLabel: s.subscribed ? "Link" : (this.frozen() ? "Reactivate" : "Save"),
       upgradeTitle: s.subscribed ? "Your tree is live" : "Keep the tree alive",
       upgradeSub: s.subscribed
         ? "Share this link with anyone in the family — it always shows the latest tree."
@@ -1760,7 +1782,7 @@ function viewBoard(V) {
       h("div", { style: "display:flex; flex-direction:column; gap:8px" },
         h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Email or phone — optional"),
         inp({ value: V.contact, onChange: V.onContact, placeholder: "you@email.com  or  (555) 123-4567", style: "font-size:15px; padding:14px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-        h("div", { style: "font-size:12px; line-height:1.45; color:#645c50" }, "We'll text or email you the code so you don't have to memorize it — with a reminder that a free board expires 72 hours after it's created. Optional.")
+        h("div", { style: "font-size:12px; line-height:1.45; color:#645c50" }, "We'll text or email you the code so you don't have to memorize it — with a reminder that a free board becomes read-only 7 days after it's created. Optional.")
       ),
       h("div", { style: "padding:14px 16px; border-radius:20px; background:#f0fae1; font-size:13px; line-height:1.5; color:#3d472b" }, "A board code is a doorway, not a lock. Anyone who types it can read and change these names. Treat it like a poster in the reunion hall.")
     ),
@@ -1775,6 +1797,7 @@ function viewApp(V) {
   if (V.wide) return appDesktop(V);
   return h("div", { key: "app", style: "flex:1; display:flex; flex-direction:column; min-height:0; position:relative" },
     appHeader(V),
+    frozenBanner(V),
     V.isRadial ? appRadial(V) : V.isRows ? rowsView(V) : appTree(V),
     appToast(V),
     appScrim(V),
@@ -1783,11 +1806,23 @@ function viewApp(V) {
   );
 }
 
+// Read-only notice shown once the free week is up (until someone pays).
+function frozenBanner(V) {
+  if (!V.isFrozen) return null;
+  return h("div", { key: "frozen", style: "flex:none; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:11px 16px; background:#ffe1d0; border-bottom:1.5px solid #f6a06b" },
+    h("div", { style: "flex:1; min-width:170px; font-size:12.5px; line-height:1.45; color:#8c491a" },
+      h("span", { style: "font-weight:800" }, "Read-only — the free week is up. "),
+      "Everything's still here to see; editing and new invites are paused until you reactivate."),
+    btn({ onClick: V.onOpenUpgrade, style: "flex:none; font-size:13px; font-weight:800; padding:10px 16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Reactivate — $19.99/yr")
+  );
+}
+
 // Desktop: a readable working column (toolbar + tree) plus a context sidebar.
 function appDesktop(V) {
   return h("div", { key: "app", style: "flex:1; min-height:0; display:flex; position:relative" },
     h("div", { style: "flex:1; min-width:0; max-width:680px; display:flex; flex-direction:column; min-height:0" },
       appHeader(V, true),
+      frozenBanner(V),
       V.isRadial ? appRadial(V) : V.isRows ? rowsView(V) : appTree(V)
     ),
     appSidebar(V),
@@ -1867,8 +1902,8 @@ function appHeader(V, wide) {
     h("div", { style: "display:flex; align-items:center; gap:7px" },
       btn({ onClick: V.onLeaveBoard, title: "Back to your boards", style: "flex:none; display:flex; align-items:center; gap:5px; font-size:12px; font-weight:700; padding:6px 11px 6px 9px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
         h("span", { style: "font-size:14px" }, "←"), h("span", null, "Boards")),
-      inp({ id: "rt-familyname", value: V.familyName, onChange: V.onFamilyName, maxlength: "18", placeholder: "Family name", style: "flex:1; min-width:0; font-family:Caprasimo, serif; font-size:21px; line-height:1.15; color:#201e1d; background:transparent; border:none; outline:none; padding:0; text-overflow:ellipsis" }),
-      btn({ onClick: () => { const el = document.getElementById("rt-familyname"); if (el) { el.focus(); el.select(); } }, title: "Edit family name", "aria-label": "Edit family name", style: iconBtn + " width:30px; height:30px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#82796a; font-size:13px", hover: "border-color:#c67139; color:#8c491a" }, "✎"),
+      inp({ id: "rt-familyname", value: V.familyName, onChange: V.onFamilyName, readonly: V.canEdit ? null : true, maxlength: "18", placeholder: "Family name", style: "flex:1; min-width:0; font-family:Caprasimo, serif; font-size:21px; line-height:1.15; color:#201e1d; background:transparent; border:none; outline:none; padding:0; text-overflow:ellipsis" }),
+      V.canEdit ? btn({ onClick: () => { const el = document.getElementById("rt-familyname"); if (el) { el.focus(); el.select(); } }, title: "Edit family name", "aria-label": "Edit family name", style: iconBtn + " width:30px; height:30px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#82796a; font-size:13px", hover: "border-color:#c67139; color:#8c491a" }, "✎") : null,
       btn({ onClick: V.onOpenMenu, title: "Menu — show on a TV, log, live activity", "aria-label": "More", style: iconBtn + " width:32px; height:32px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:20px; line-height:1", hover: "border-color:#c67139; color:#8c491a" }, "⋮"),
       btn({ onClick: V.onOpenShareMenu, title: "Share & download", "aria-label": "Share", style: iconBtn + " width:34px; height:34px; border:none; background:#c67139; color:#fff2eb; font-size:15px", hover: "background:#b2622d" }, "↗")
     ),
@@ -1921,9 +1956,9 @@ function appTree(V) {
   return h("div", { style: "flex:1; overflow:auto; padding:14px 16px 26px", class: "noscroll" },
     h("div", { style: "zoom:" + V.zoom + "; display:flex; flex-direction:column" },
       V.rows.map(r => row(r)),
-      h("div", { key: "addroot", style: "padding-top:14px" },
+      V.canEdit ? h("div", { key: "addroot", style: "padding-top:14px" },
         btn({ onClick: V.onAddRoot, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:16px 18px; border-radius:24px; border:2px dashed #c0b6a5; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "+ Start another branch of the family")
-      ),
+      ) : null,
       V.noMatch ? h("div", { key: "nomatch", style: "padding:22px 4px; font-size:14px; color:#645c50; line-height:1.5" }, "Nobody matches “" + V.query + "”. Try a first name on its own.") : null
     )
   );
@@ -1946,9 +1981,9 @@ function rowsView(V) {
         ))
       : h("div", { style: "padding:26px 4px; font-size:14px; color:#645c50; line-height:1.55" },
           q ? "Nobody matches “" + q + "”. Try a first name on its own." : "No names yet. Add your first relative below."),
-    h("div", { style: "padding-top:16px" },
+    (V.canEdit && V.genGroups.length) ? h("div", { style: "padding-top:16px" },
       btn({ onClick: V.onAddRoot, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:16px 18px; border-radius:24px; border:2px dashed #c0b6a5; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "+ Start another branch of the family")
-    )
+    ) : null
   );
 }
 
@@ -1979,7 +2014,7 @@ function rowsPerson(p, g) {
         h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + p.byColor }, p.byLine)
       )
     ),
-    btn({ onClick: p.onAddChild, title: "Add a child of " + p.name, "aria-label": "Add a child", style: "flex:none; width:50px; border:none; background:transparent; color:" + g.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + g.soft }, "+")
+    p.canEdit ? btn({ onClick: p.onAddChild, title: "Add a child of " + p.name, "aria-label": "Add a child", style: "flex:none; width:50px; border:none; background:transparent; color:" + g.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + g.soft }, "+") : null
   );
 }
 
@@ -2050,7 +2085,7 @@ function row(r) {
                 h("span", { style: "font-size:12px" }, spouse ? "⚭" : "⇄"),
                 h("span", null, (spouse ? "Married to " : "Sibling of ") + lk.otherName)
               ),
-              h("span", { onClick: e => { if (e && e.stopPropagation) e.stopPropagation(); lk.onUnlink(); }, title: "Remove this connection", "aria-label": "Remove connection", style: "cursor:pointer; font-size:15px; font-weight:800; line-height:1; padding:0 4px; opacity:.6" }, "×")
+              r.canEdit ? h("span", { onClick: e => { if (e && e.stopPropagation) e.stopPropagation(); lk.onUnlink(); }, title: "Remove this connection", "aria-label": "Remove connection", style: "cursor:pointer; font-size:15px; font-weight:800; line-height:1; padding:0 4px; opacity:.6" }, "×") : null
             );
           }),
           r.detail ? h("span", { style: "font-size:12px; line-height:1.4; color:#645c50" }, r.detail) : null,
@@ -2058,10 +2093,10 @@ function row(r) {
           r.flagged ? h("span", { style: "align-self:flex-start; font-size:10px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:3px 9px; border-radius:999px" }, "two entries — tap, then open the chat") : null
         )
       ),
-      btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:transparent; color:" + r.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + r.soft }, "+")
+      r.canEdit ? btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:transparent; color:" + r.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + r.soft }, "+") : null
     );
     const card = [head];
-    if (r.selected) {
+    if (r.selected && r.canEdit) {
       card.push(h("div", { key: "acts", style: "display:flex; flex-wrap:wrap; gap:7px; padding:11px 12px; border-top:1.5px solid #dcd3c4; background:#f5ead8" },
         btn({ onClick: r.onEdit, style: actBtn, hover: "border-color:#c67139" }, "Edit person and/or spouse/partner"),
         btn({ onClick: r.onDelete, style: "font-size:12px; font-weight:700; padding:9px 14px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove"),
@@ -2693,7 +2728,7 @@ function upgradeSheet(V) {
         ),
         V.payError ? h("div", { style: "font-size:13px; font-weight:700; color:#8c491a" }, V.payError) : null,
         btn({ onClick: V.payBusy ? null : V.onSubscribe, style: "font-size:16px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; opacity:" + (V.payBusy ? ".7" : "1"), hover: "background:#b2622d" }, V.payBusy ? "Opening secure checkout…" : "Keep it live — $19.99 a year"),
-        btn({ onClick: V.onCloseSheet, style: "font-size:14px; font-weight:700; padding:14px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Not now — let it expire in 3 days"),
+        btn({ onClick: V.onCloseSheet, style: "font-size:14px; font-weight:700; padding:14px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, V.isFrozen ? "Not now — keep it read-only" : "Not now — free to edit for 7 days"),
         h("div", { style: "display:flex; align-items:center; justify-content:center; gap:6px; font-size:11px; line-height:1.5; color:#82796a; text-align:center" },
           h("span", { style: "font-size:12px" }, "🔒"),
           h("span", null, "Secure checkout by Stripe. Cancel any time. Downloads stay free either way."))

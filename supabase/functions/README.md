@@ -16,27 +16,38 @@ Two functions + a one-time product setup:
 
 ## 1. Database — run once in the SQL Editor
 
+Lifecycle: a free board is **fully editable for 7 days**, then goes
+**read-only** — everyone can still see the whole tree, but no one can edit it or
+add new people until someone pays. Paying flips `is_paid` (via the webhook) and
+editing returns instantly.
+
 ```sql
--- Billing / lifecycle columns (safe to re-run)
+-- Billing / lifecycle columns (safe to re-run). 7-day free trial.
 alter table public.boards
   add column if not exists created_at  timestamptz not null default now(),
-  add column if not exists expires_at  timestamptz not null default (now() + interval '3 days'),
+  add column if not exists expires_at  timestamptz not null default (now() + interval '7 days'),
   add column if not exists is_paid      boolean     not null default false,
   add column if not exists owner_email  text,
   add column if not exists paid_until   timestamptz,
   add column if not exists stripe_customer_id     text,
   add column if not exists stripe_subscription_id text;
 
+-- New default is 7 days; move any existing 3-day rows out to a week from creation.
+update public.boards set expires_at = created_at + interval '7 days'
+  where not is_paid and expires_at < created_at + interval '7 days';
+
 -- Fast lookup for renewals / cancellations
 create index if not exists boards_stripe_sub_idx on public.boards (stripe_subscription_id);
 
--- "The link goes dark": free boards stop loading once expired; paid stay live
+-- Boards stay READABLE forever (read-only after the trial); the write guard below
+-- is what actually freezes editing. Anyone with the code can read, as before.
 drop policy if exists "read boards" on public.boards;
 drop policy if exists "read live boards" on public.boards;
-create policy "read live boards" on public.boards
-  for select using (is_paid or expires_at > now());
+create policy "read boards" on public.boards
+  for select using (true);
 
--- Browser clients (anon) can only edit the tree; billing columns are server-only
+-- Browser clients (anon): billing columns are server-only, AND once the free
+-- week is up on an unpaid board the tree data is frozen too (read-only).
 create or replace function public.guard_board_billing()
 returns trigger language plpgsql as $$
 begin
@@ -46,6 +57,10 @@ begin
     new.created_at := old.created_at;
     new.stripe_customer_id := old.stripe_customer_id;
     new.stripe_subscription_id := old.stripe_subscription_id;
+    -- read-only after the trial: reject tree edits on an expired, unpaid board
+    if not old.is_paid and old.expires_at <= now() then
+      new.data := old.data;
+    end if;
   end if;
   return new;
 end $$;
@@ -110,11 +125,15 @@ with `?paid=1`; within a couple of seconds the webhook flips `is_paid` and the
 ---
 
 ### How it behaves
-- **One board, one code.** Paying only extends the board's life (a year); it
-  never changes who can access it. Everyone with the code keeps full access.
+- **One board, one code.** The tree is always visible to anyone with the code.
+  Paying just keeps it *editable*; it never changes who can view it.
+- **Free for 7 days, then read-only.** After the trial an unpaid board freezes —
+  fully visible, no edits, no new people — until someone pays.
+- **Paying unfreezes instantly.** The webhook sets `is_paid`; the browser sees it
+  over realtime and editing returns with no reload.
 - **Renewals** (`invoice.paid`) push `expires_at`/`paid_until` out another year.
-- **Cancellation** clears `is_paid`; the board then lives until `expires_at` and
-  goes dark after, exactly like a free board.
+- **Cancellation** clears `is_paid`; the board stays live until `expires_at`, then
+  drops back to read-only (not dark), exactly like a lapsed free board.
 - The purchaser's email is stored as `owner_email` (receipt + link recipient).
 
 ---
@@ -123,8 +142,8 @@ with `?paid=1`; within a couple of seconds the webhook flips `is_paid` and the
 
 On the create/join screen a person can enter an **optional** email or phone.
 When they create or join, the app calls this function, which emails (Resend) or
-texts (Twilio) them the board code, the link, and when it expires (the 72-hour
-rule, or the renew date if paid). It's best-effort — if the relevant provider
+texts (Twilio) them the board code, the link, and when it goes read-only (the
+7-day rule, or the renew date if paid). It's best-effort — if the relevant provider
 isn't configured it returns 501 and the app silently ignores it.
 
 ### Providers (set the ones you want)

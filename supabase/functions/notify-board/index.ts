@@ -38,18 +38,18 @@ Deno.serve(async (req) => {
     const c = String(contact || "").trim();
     if (!board || !c) return json({ error: "missing code or contact" }, 400);
 
-    // Expiry from the board row (72-hour rule); fall back to now + 72h for a
+    // Read-only date from the board row (7-day rule); fall back to now + 7d for a
     // board that hasn't finished being created yet.
     const { data } = await admin.from("boards").select("created_at, expires_at, is_paid").eq("code", board).maybeSingle();
     const now = Date.now();
-    const expiresMs = data?.expires_at ? Date.parse(data.expires_at) : now + 72 * 3600 * 1000;
+    const expiresMs = data?.expires_at ? Date.parse(data.expires_at) : now + 7 * 24 * 3600 * 1000;
     const paid = !!data?.is_paid;
     const days = Math.max(0, Math.ceil((expiresMs - now) / (24 * 3600 * 1000)));
     const dateStr = new Date(expiresMs).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     const link = `${SITE_URL}/?board=${board}`;
     const expiryLine = paid
       ? `This board is saved — it stays live (renews ${dateStr}).`
-      : `Reminder: a free board expires 72 hours after it's created — this one is gone on ${dateStr} (${days} day${days === 1 ? "" : "s"} left). Keep it for a year for $19.99 before then.`;
+      : `Reminder: a free board is editable for 7 days, then becomes read-only — this one locks on ${dateStr} (${days} day${days === 1 ? "" : "s"} left). Everyone can still view it; keep it editable for a year for $19.99.`;
 
     const isEmail = c.indexOf("@") > 0;
 
