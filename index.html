@@ -1431,6 +1431,7 @@ const App = {
       onDownloadPdf: () => { this.downloadTree("pdf", total); track("tree_downloaded", { format: "pdf" }); },
       onDownloadImage: () => { this.downloadImage(total); track("tree_downloaded", { format: "image" }); },
       expiryDate: s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(7),
+      daysLeft: s.expiresAt ? Math.max(0, Math.ceil((new Date(s.expiresAt).getTime() - Date.now()) / 86400000)) : 7,
       renewDate: s.paidUntil ? this.fmtDate(s.paidUntil) : (s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(365)),
       isPaid: s.subscribed, isUnpaid: !s.subscribed,
       isFrozen: this.frozen(), canEdit: !this.frozen(),
@@ -1902,7 +1903,7 @@ function appHeader(V, wide) {
     h("div", { style: "display:flex; align-items:center; gap:7px" },
       btn({ onClick: V.onLeaveBoard, title: "Back to your boards", style: "flex:none; display:flex; align-items:center; gap:5px; font-size:12px; font-weight:700; padding:6px 11px 6px 9px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
         h("span", { style: "font-size:14px" }, "←"), h("span", null, "Boards")),
-      inp({ id: "rt-familyname", value: V.familyName, onChange: V.onFamilyName, readonly: V.canEdit ? null : true, maxlength: "18", placeholder: "Family name", style: "flex:1; min-width:0; font-family:Caprasimo, serif; font-size:21px; line-height:1.15; color:#201e1d; background:transparent; border:none; outline:none; padding:0; text-overflow:ellipsis" }),
+      inp({ id: "rt-familyname", value: V.familyName, onChange: V.onFamilyName, readonly: V.canEdit ? null : true, maxlength: "23", placeholder: "Family name", style: "flex:1; min-width:0; font-family:Caprasimo, serif; font-size:21px; line-height:1.15; color:#201e1d; background:transparent; border:none; outline:none; padding:0; text-overflow:ellipsis" }),
       V.canEdit ? btn({ onClick: () => { const el = document.getElementById("rt-familyname"); if (el) { el.focus(); el.select(); } }, title: "Edit family name", "aria-label": "Edit family name", style: iconBtn + " width:30px; height:30px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#82796a; font-size:13px", hover: "border-color:#c67139; color:#8c491a" }, "✎") : null,
       btn({ onClick: V.onOpenMenu, title: "Menu — show on a TV, log, live activity", "aria-label": "More", style: iconBtn + " width:32px; height:32px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; font-size:20px; line-height:1", hover: "border-color:#c67139; color:#8c491a" }, "⋮"),
       btn({ onClick: V.onOpenShareMenu, title: "Share & download", "aria-label": "Share", style: iconBtn + " width:34px; height:34px; border:none; background:#c67139; color:#fff2eb; font-size:15px", hover: "background:#b2622d" }, "↗")
@@ -2712,7 +2713,9 @@ function upgradeSheet(V) {
       )
     : h("div", { style: "display:flex; flex-direction:column; gap:14px" },
         h("div", { style: "padding:14px 16px; border-radius:20px; background:#ffe1d0; border:1.5px solid #f6a06b; font-size:13px; line-height:1.5; color:#8c491a" },
-          "Right now this board is free — the link goes dark on ", h("span", { style: "font-weight:800" }, V.expiryDate), ", three days from today."),
+          V.isFrozen
+            ? "This board is read-only — the free week is up. Everyone can still see the tree; reactivate to edit and add people again."
+            : ["Right now this board is free — it goes read-only on ", h("span", { style: "font-weight:800" }, V.expiryDate), V.daysLeft > 0 ? (", " + V.daysLeft + " day" + (V.daysLeft === 1 ? "" : "s") + " from today.") : " (today)."]),
         h("div", { style: "display:flex; flex-direction:column; gap:8px" },
           V.planPerks.map((p, i) => h("div", { key: "pk" + i, style: "display:flex; align-items:flex-start; gap:10px" },
             h("span", { style: "width:20px; height:20px; flex:none; border-radius:999px; background:#7a8a5e; color:#f0fae1; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center" }, "✓"),
