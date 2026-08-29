@@ -1979,7 +1979,7 @@ function rowsPerson(p, g) {
         h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + p.byColor }, p.byLine)
       )
     ),
-    btn({ onClick: p.onAddChild, title: "Add a child of " + p.name, "aria-label": "Add a child", style: "flex:none; width:50px; border:none; background:" + g.color + "; color:#fff2eb; font-size:24px; font-weight:700; cursor:pointer" }, "+")
+    btn({ onClick: p.onAddChild, title: "Add a child of " + p.name, "aria-label": "Add a child", style: "flex:none; width:50px; border:none; background:transparent; color:" + g.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + g.soft }, "+")
   );
 }
 
@@ -2058,7 +2058,7 @@ function row(r) {
           r.flagged ? h("span", { style: "align-self:flex-start; font-size:10px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:3px 9px; border-radius:999px" }, "two entries — tap, then open the chat") : null
         )
       ),
-      btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:" + r.color + "; color:#fff2eb; font-size:24px; font-weight:700; cursor:pointer" }, "+")
+      btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:transparent; color:" + r.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + r.soft }, "+")
     );
     const card = [head];
     if (r.selected) {
