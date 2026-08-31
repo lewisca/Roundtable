@@ -1514,7 +1514,7 @@ const App = {
         ? "Share this link with anyone in the family — it always shows the latest tree."
         : "Your own link to this tree, updating in real time as the family adds to it.",
       liveLink: "famroundtable.com/?board=" + s.room,
-      onCopyLink: () => { this.copy("https://roundtable.family/" + s.room.toLowerCase()); this.setState({ sheet: null, toast: { text: "Link copied — paste it in the family thread", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
+      onCopyLink: () => { this.copy("https://famroundtable.com/?board=" + s.room); this.setState({ sheet: null, toast: { text: "Link copied — paste it in the family thread", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
       planPerks: [
         "A private link that always shows the latest tree — no app to install.",
         "Everyone keeps adding: new babies, new marriages, corrections, years later.",
@@ -1618,10 +1618,10 @@ const App = {
         return { parentPickSel: sel };
       }),
       onConfirmParentPick: () => this.confirmParentPick(),
-      invite: "Help us build the " + s.familyName + " tree at the reunion.\n\n1. Open the link\n2. Tap “I have a code already”\n3. Type in the board code: " + s.room + "\n\nThen add the relatives you know best. Takes about two minutes.",
+      invite: "Help us build the " + s.familyName + " tree at the reunion.\n\nTap the link: https://famroundtable.com/?board=" + s.room + "\n(or open famroundtable.com and enter board code " + s.room + ")\n\nThen add the relatives you know best — takes about two minutes.",
       onCopyInvite: () => { this.copy(this.renderVals().invite); this.setState({ sheet: null, toast: { text: "Message copied — paste it in the group text", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
       onTextIt: () => {
-        const body = encodeURIComponent("Join our family tree on Roundtable — board code " + s.room + " at roundtable.family");
+        const body = encodeURIComponent("Join our family tree on Roundtable: https://famroundtable.com/?board=" + s.room + "  (or enter board code " + s.room + ")");
         window.open("sms:?&body=" + body, "_blank");
         this.setState({ sheet: null, toast: { text: "Opening Messages with the code", i: "✓", c: this.accent() } }, () => this.flashToast());
       },
