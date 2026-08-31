@@ -409,6 +409,7 @@ const App = {
     logFilter: "all",
     payEmail: "", payCard: "", payExp: "", payCvc: "", payName: "", payError: null, payBusy: false,
     assistantInput: "", assistantBusy: false, assistantResult: "", assistantError: null,
+    feedbackText: "",
     subscribed: false, expiresAt: null, paidUntil: null, ownerEmail: null
   },
 
@@ -1365,6 +1366,18 @@ const App = {
       onCloseSheet: () => this.setState({ sheet: null, deleteId: null, addForId: null, parentPickFor: null, connectFor: null }),
       isLogSheet: s.sheet === "log",
       onOpenLog: () => this.setState({ sheet: "log" }),
+      feedbackText: s.feedbackText,
+      onOpenFeedback: () => this.setState({ sheet: "feedback", feedbackText: "" }),
+      onFeedbackText: e => this.setState({ feedbackText: e.target.value }),
+      onSendFeedback: () => {
+        const st = this.state, msg = (st.feedbackText || "").trim();
+        if (!msg) return;
+        const body = msg + "\n\n———\nSent from Roundtable" + (st.room ? " · board " + st.room : "") + " · " + (st.viewMode || "") + " view\n" + (navigator.userAgent || "");
+        const href = "mailto:lewisca87@gmail.com?subject=" + encodeURIComponent("Roundtable — feedback / bug report") + "&body=" + encodeURIComponent(body);
+        try { window.location.href = href; } catch (e) {}
+        track("feedback_sent");
+        this.setState({ sheet: null, feedbackText: "", toast: { text: "Opening your email — just hit send to reach us", i: "✉", c: this.accent() } }, () => this.flashToast());
+      },
       logCount: s.log.length,
       logFilters: [
         { key: "all", label: "Everything" },
@@ -1410,7 +1423,7 @@ const App = {
       isEditSheet: s.sheet === "edit", isDeleteSheet: s.sheet === "delete",
       isBoardSheet: s.sheet === "board", isShareSheet: s.sheet === "share",
       isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
-      isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu", isAssistantSheet: s.sheet === "assistant",
+      isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu", isAssistantSheet: s.sheet === "assistant", isFeedbackSheet: s.sheet === "feedback",
       isRadial: s.viewMode === "radial",
       isRows: s.viewMode === "rows",
       genGroups: genGroups, rowsSummary: rowsSummary,
@@ -2292,6 +2305,7 @@ function sheets(V) {
   else if (V.isAddSheet) n = addSheet(V);
   else if (V.isConnectSheet) n = connectSheet(V);
   else if (V.isMenuSheet) n = menuSheet(V);
+  else if (V.isFeedbackSheet) n = feedbackSheet(V);
   else if (V.isAssistantSheet) n = assistantSheet(V);
   else if (V.isShareMenuSheet) n = shareMenuSheet(V);
   else if (V.isParentPickSheet) n = parentPickSheet(V);
@@ -2467,6 +2481,21 @@ function assistantSheet(V) {
   );
 }
 
+// Feedback / bug report — a note that opens the user's email app addressed to the team.
+function feedbackSheet(V) {
+  const canSend = !!(V.feedbackText && V.feedbackText.trim());
+  return h("div", { key: "sheet-feedback", style: SHEET + "; max-height:88%; gap:14px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; flex-direction:column; gap:4px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:24px" }, "Feedback or a bug?"),
+      h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "Tell us what's working, what broke, or what you'd love to see. It opens your email app addressed to us — just hit send.")
+    ),
+    h("textarea", { value: V.feedbackText, onInput: V.onFeedbackText, placeholder: "What happened, or what would make this better?", rows: "5", style: "font-family:Figtree, system-ui, sans-serif; font-size:15px; line-height:1.5; padding:14px 16px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none; resize:vertical; min-height:120px; box-sizing:border-box" }),
+    btn({ onClick: canSend ? V.onSendFeedback : null, style: "font-size:16px; font-weight:800; padding:15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; opacity:" + (canSend ? "1" : ".55"), hover: "background:#b2622d" }, "Send to the team"),
+    btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:14px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Cancel")
+  );
+}
+
 function menuSheet(V) {
   const item = "display:flex; align-items:center; gap:12px; width:100%; text-align:left; font-size:15px; font-weight:700; padding:14px 16px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
   return h("div", { key: "sheet-menu", style: SHEET + "; max-height:82%; gap:12px", class: "noscroll" },
@@ -2504,6 +2533,13 @@ function menuSheet(V) {
     btn({ onClick: V.onOpenLog, style: item, hover: "border-color:#c67139" },
       hamburgerIcon(), h("span", { style: "flex:1" }, "Change log"),
       h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#82796a" }, String(V.logCount))
+    ),
+    btn({ onClick: V.onOpenFeedback, style: item, hover: "border-color:#c67139" },
+      h("span", { style: "font-size:17px" }, "✉"),
+      h("span", { style: "display:flex; flex-direction:column; gap:1px" },
+        h("span", null, "Report feedback / a bug"),
+        h("span", { style: "font-size:11px; font-weight:600; color:#82796a" }, "Tell us what's working or what's not")
+      )
     ),
     h("div", { style: "display:flex; flex-direction:column; gap:9px" },
       h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Live activity"),

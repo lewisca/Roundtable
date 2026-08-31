@@ -47,6 +47,7 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 | `Radial_view` | `onSetView("radial")` | — |
 | `Filters` | `onToggleTools` (on open) | — |
 | `tree_downloaded` | `onDownloadPdf` / `onDownloadImage` | `format` (pdf \| image) |
+| `feedback_sent` | `onSendFeedback` (menu → Report feedback) | — |
 | `upgrade_started` | `onSubscribe` (button click) | — |
 | `Check out started` | `onSubscribe` (redirect to Stripe) | — |
 | `upgrade_completed` | boot, `?paid=1` return | — |
