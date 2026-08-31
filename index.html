@@ -1372,7 +1372,7 @@ const App = {
       onSendFeedback: () => {
         const st = this.state, msg = (st.feedbackText || "").trim();
         if (!msg) return;
-        const body = msg + "\n\n———\nSent from Roundtable" + (st.room ? " · board " + st.room : "") + " · " + (st.viewMode || "") + " view\n" + (navigator.userAgent || "");
+        const body = msg + "\n\n———\nSent from Roundtable" + (st.room ? " · board " + st.room : "");
         const href = "mailto:lewisca87@gmail.com?subject=" + encodeURIComponent("Roundtable — feedback / bug report") + "&body=" + encodeURIComponent(body);
         try { window.location.href = href; } catch (e) {}
         track("feedback_sent");
