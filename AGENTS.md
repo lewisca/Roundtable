@@ -36,6 +36,7 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 |-------|-------|-----------|
 | `board_created` | `onStartBoard` | `has_contact` |
 | `board_joined` | `onJoinBoard` / deep-link boot | `via` (code_entry \| link), `has_contact` |
+| `Add a person` | `+` on a card (`openAddMenu` / Rows `onAddChild`) | — |
 | `person_added` ⭐ | end of `saveEdit` (new) | `relation` (child\|parent\|sibling\|root), `has_partner`, `demo` |
 | `person_removed` | end of `removePerson` | `mode` (one \| subtree) |
 | `share` | `onOpenShare` (Share code button) | — |

@@ -780,7 +780,7 @@ const App = {
     this.setState({ sheet: "edit", editId: null, editIsNew: true, editParent: (child ? (child.parentId || null) : null), editParentOf: [id], addKind: "parent", draftName: "", draftBorn: "", draftDied: "", draftPlace: "", draftNote: "", draftPartners: [], draftCoParent: "", draftMore: false, draftPhoto: "" });
   },
   // The + button on a card opens a small menu to add a child, parent, or sibling.
-  openAddMenu(id) { if (this.blockedByFreeze()) return; this.setState({ sheet: "add", addForId: id, selected: id }); },
+  openAddMenu(id) { if (this.blockedByFreeze()) return; track("Add a person"); this.setState({ sheet: "add", addForId: id, selected: id }); },
   // Optional: email/text the board code + expiry to the person on create/join.
   // Best-effort — needs the `notify-board` Edge Function deployed (see README).
   async notifyBoard(code, contact) {
@@ -1193,7 +1193,7 @@ const App = {
             byColor: p.placeholder ? "#c67139" : "#c0b6a5",
             canEdit: !this.frozen(),
             onOpen: () => this.openEdit(p.id),
-            onAddChild: () => this.openNew(p.id, "child"),
+            onAddChild: () => { track("Add a person"); this.openNew(p.id, "child"); },
           })),
         };
       });
