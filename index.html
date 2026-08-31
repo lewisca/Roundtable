@@ -553,8 +553,28 @@ const App = {
     try {
       localStorage.setItem(STORE_PREFIX + s.room, JSON.stringify(snap));
       localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName, contact: s.contact }));
+      this.rememberBoard(s.room, s.familyName);
     } catch (e) {}
     this.saveRemote(s.room, snap);
+  },
+  // Boards this browser has opened, so they can be re-entered without the code
+  // (localStorage — this device only). Newest first, capped at 8, demo excluded.
+  rememberBoard(code, name) {
+    if (!code || code === DEMO_ROOM) return;
+    let list;
+    try { list = JSON.parse(localStorage.getItem("roundtable:boards") || "[]"); } catch (e) { list = []; }
+    if (!Array.isArray(list)) list = [];
+    list = list.filter(b => b && b.code && b.code !== code);
+    list.unshift({ code: code, name: (name || "").trim(), at: Date.now() });
+    try { localStorage.setItem("roundtable:boards", JSON.stringify(list.slice(0, 8))); } catch (e) {}
+  },
+  myBoards() {
+    try { const l = JSON.parse(localStorage.getItem("roundtable:boards") || "[]"); return Array.isArray(l) ? l : []; } catch (e) { return []; }
+  },
+  forgetBoard(code) {
+    let list = this.myBoards().filter(b => b && b.code !== code);
+    try { localStorage.setItem("roundtable:boards", JSON.stringify(list)); } catch (e) {}
+    this.setState({ tick: this.state.tick + 1 });
   },
 
   /* ---- Supabase sync (real shared boards + realtime) ---------------- */
@@ -1303,6 +1323,9 @@ const App = {
         this.setState({ step: "board", room: s.joining ? s.room : this.newCode(), nameError: null });
       },
       joining: s.joining, notJoining: !s.joining,
+      myBoards: this.myBoards(),
+      onEnterSavedBoard: (code) => () => { this.enterRoom(code, false); track("board_joined", { via: "saved" }); },
+      onForgetBoard: (code) => (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.forgetBoard(code); },
       codeInput: s.codeInput,
       onCodeInput: e => this.setState({ codeInput: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8), codeError: null }),
       onHaveCode: () => this.setState({ joining: true }),
@@ -1813,7 +1836,20 @@ function viewBoard(V) {
             inp({ value: V.codeInput, onChange: V.onCodeInput, placeholder: "ABC123", style: "font-family:'IBM Plex Mono', monospace; font-size:24px; letter-spacing:.2em; text-align:center; padding:16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
             V.codeError ? h("div", { style: "font-size:13px; font-weight:700; line-height:1.45; color:#8c491a" }, V.codeError) : null,
             btn({ onClick: V.onJoinBoard, style: "font-size:16px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer" }, "Join board"),
-            btn({ onClick: V.onNewBoard, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Make a new board instead")
+            btn({ onClick: V.onNewBoard, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "Make a new board instead"),
+            V.myBoards.length ? h("div", { style: "height:1px; background:#e6ddcc; margin:6px 0 2px" }) : null,
+            V.myBoards.length ? h("div", { style: "display:flex; flex-direction:column; gap:3px" },
+              h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Your boards"),
+              h("div", { style: "font-size:12px; line-height:1.4; color:#82796a" }, "Boards you've opened on this phone — tap to jump back in, no code needed.")
+            ) : null,
+            V.myBoards.map((b, i) => btn({ key: "sb" + i, onClick: V.onEnterSavedBoard(b.code), style: "display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:11px 12px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f5ead8; cursor:pointer", hover: "border-color:#c67139" },
+              h("span", { style: "width:36px; height:36px; flex:none; border-radius:999px; background:#c67139; color:#fff2eb; font-family:Caprasimo, serif; font-size:15px; display:flex; align-items:center; justify-content:center" }, (((b.name || "").trim()[0]) || "?").toUpperCase()),
+              h("span", { style: "flex:1; min-width:0; display:flex; flex-direction:column; gap:1px" },
+                h("span", { style: "font-family:Caprasimo, serif; font-size:16px; color:#201e1d; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, b.name || "Your family"),
+                h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:12px; letter-spacing:.14em; color:#8c491a" }, b.code)
+              ),
+              h("span", { onClick: V.onForgetBoard(b.code), title: "Remove from this list", "aria-label": "Remove from list", style: "flex:none; font-size:18px; font-weight:800; color:#c0b6a5; padding:2px 6px; cursor:pointer" }, "×")
+            ))
           )
         : h("div", { style: "display:flex; flex-direction:column; gap:12px" },
             h("div", { style: "padding:16px; border-radius:24px; background:#ffe1d0; text-align:center" },
