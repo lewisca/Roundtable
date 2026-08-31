@@ -1823,12 +1823,6 @@ function viewBoard(V) {
             btn({ onClick: V.onStartBoard, style: "font-size:16px; font-weight:700; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer" }, "Create board"),
             btn({ onClick: V.onHaveCode, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer" }, "I have a code already")
           ),
-      h("div", { style: "height:1px; background:#e6ddcc" }),
-      h("div", { style: "display:flex; flex-direction:column; gap:8px" },
-        h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Email or phone — optional"),
-        inp({ value: V.contact, onChange: V.onContact, placeholder: "you@email.com  or  (555) 123-4567", style: "font-size:15px; padding:14px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
-        h("div", { style: "font-size:12px; line-height:1.45; color:#645c50" }, "We'll text or email you the code so you don't have to memorize it — with a reminder that a free board becomes read-only 7 days after it's created. Optional.")
-      ),
       h("div", { style: "padding:14px 16px; border-radius:20px; background:#f0fae1; font-size:13px; line-height:1.5; color:#3d472b" }, "A board code is a doorway, not a lock. Anyone who types it can read and change these names. Treat it like a poster in the reunion hall.")
     ),
     h("div", { style: "font-size:12px; line-height:1.5; color:#82796a; text-align:center" }, "Tip: join code ", h("strong", null, DEMO_ROOM), " to explore the sample family.")
