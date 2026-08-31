@@ -6,6 +6,9 @@
 <title>Roundtable — the family tree you build together</title>
 <meta name="description" content="Share one board code. Everyone fills in the branch they know best, and the tree keeps growing.">
 <meta name="theme-color" content="#c67139">
+<!-- Browser-tab / bookmark / home-screen icon: the Roundtable "R" mark -->
+<link rel="icon" type="image/png" href="roundtable-logo-512.png">
+<link rel="apple-touch-icon" href="roundtable-logo-512.png">
 <!-- Added to the Home Screen, Roundtable launches chrome-free — true fullscreen for projecting from a phone -->
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1250,12 +1253,12 @@ const App = {
         { n: "2", c: "#7a8a5e", title: "Add your branch", body: "A name is enough — details whenever you like." },
         { n: "3", c: "#8c491a", title: "Watch it fill in", body: "Multiple phones, one tree. Duplicates get flagged, never overwritten." }
       ],
-      onStartNow: () => this.setState({ step: "name", joining: false }),
+      onStartNow: () => { track("Create free family tree"); this.setState({ step: "name", joining: false }); },
       onBackToLanding: () => this.setState({ step: "landing", joining: false }),
       onBackToName: () => this.setState({ step: "name" }),
       onGoLanding: () => { clearInterval(this._liveTimer); this.unsubscribeRoom(); this._remoteReady = false; this.setState({ step: "landing", sheet: null, selected: null, joining: false, projection: false }); },
       onLeaveBoard: () => { clearInterval(this._liveTimer); this.unsubscribeRoom(); this._remoteReady = false; this.setState({ step: "board", sheet: null, selected: null, projection: false }); },
-      onLandingJoin: () => this.setState({ step: "name", joining: true }),
+      onLandingJoin: () => { track("I have a board code"); this.setState({ step: "name", joining: true }); },
       myName: s.myName,
       nameError: s.nameError,
       // Names only — strip digits and other non-name characters so a board code

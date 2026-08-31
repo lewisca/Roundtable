@@ -34,6 +34,8 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 ### Events (all in `index.html`)
 | Event | Where | Properties |
 |-------|-------|-----------|
+| `Create free family tree` | `onStartNow` (landing button) | — |
+| `I have a board code` | `onLandingJoin` (landing button) | — |
 | `board_created` | `onStartBoard` | `has_contact` |
 | `board_joined` | `onJoinBoard` / deep-link boot | `via` (code_entry \| link), `has_contact` |
 | `Add a person` | `+` on a card (`openAddMenu` / Rows `onAddChild`) | — |
