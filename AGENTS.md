@@ -38,12 +38,14 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 | `board_joined` | `onJoinBoard` / deep-link boot | `via` (code_entry \| link), `has_contact` |
 | `person_added` ⭐ | end of `saveEdit` (new) | `relation` (child\|parent\|sibling\|root), `has_partner`, `demo` |
 | `person_removed` | end of `removePerson` | `mode` (one \| subtree) |
-| `board_share_opened` | `onOpenShare` | — |
+| `share` | `onOpenShare` (Share code button) | — |
 | `projection_opened` | `onOpenProjection` | — |
 | `row_view` | `onSetView("rows")` | — |
 | `Radial_view` | `onSetView("radial")` | — |
+| `Filters` | `onToggleTools` (on open) | — |
 | `tree_downloaded` | `onDownloadPdf` / `onDownloadImage` | `format` (pdf \| image) |
-| `upgrade_started` | `onSubscribe` | — |
+| `upgrade_started` | `onSubscribe` (button click) | — |
+| `Check out started` | `onSubscribe` (redirect to Stripe) | — |
 | `upgrade_completed` | boot, `?paid=1` return | — |
 
 ### Governance TODO (Mixpanel dashboard)

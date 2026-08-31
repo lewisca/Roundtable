@@ -1385,7 +1385,7 @@ const App = {
       genGroups: genGroups, rowsSummary: rowsSummary,
       onSetView: (m) => () => { if (this.state.viewMode === m) return; this.setState({ viewMode: m, radialSel: null, radialFocus: null, sheet: null }); if (m === "rows") track("row_view"); else if (m === "radial") track("Radial_view"); },
       toolsOpen: s.toolsOpen,
-      onToggleTools: () => this.setState({ toolsOpen: !this.state.toolsOpen }),
+      onToggleTools: () => { const open = !this.state.toolsOpen; this.setState({ toolsOpen: open }); if (open) track("Filters"); },
       onRadialClick: (e) => {
         const g = e.target && e.target.closest ? e.target.closest("[data-node]") : null;
         const id = g ? g.getAttribute("data-node") : null;
@@ -1406,7 +1406,7 @@ const App = {
       onOpenMenu: () => this.setState({ sheet: "menu" }),
       onOpenShareMenu: () => this.setState({ sheet: "sharemenu" }),
       onOpenBoard: () => this.setState({ sheet: "board" }),
-      onOpenShare: () => { this.setState({ sheet: "share" }); track("board_share_opened", {}); },
+      onOpenShare: () => { this.setState({ sheet: "share" }); track("share"); },
       onOpenAssistant: () => this.setState({ sheet: "assistant", assistantResult: "", assistantError: null }),
       assistantInput: s.assistantInput,
       assistantBusy: s.assistantBusy, assistantResult: s.assistantResult, assistantError: s.assistantError,
@@ -1462,7 +1462,7 @@ const App = {
           const { data, error } = await sb.functions.invoke("create-checkout", { body: { code: s.room } });
           if (error) throw error;
           if (data && data.error) throw new Error(data.error);
-          if (data && data.url) { window.location.href = data.url; return; }  // -> Stripe hosted Checkout
+          if (data && data.url) { track("Check out started"); window.location.href = data.url; return; }  // -> Stripe hosted Checkout
           throw new Error("no url");
         } catch (e) {
           this.setState({ payBusy: false, payError: "Couldn't start secure checkout — payments may not be set up yet. Please try again shortly." });
