@@ -40,7 +40,8 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 | `person_removed` | end of `removePerson` | `mode` (one \| subtree) |
 | `board_share_opened` | `onOpenShare` | — |
 | `projection_opened` | `onOpenProjection` | — |
-| `view_changed` | `onToggleView` | `view` (list \| radial) |
+| `row_view` | `onSetView("rows")` | — |
+| `Radial_view` | `onSetView("radial")` | — |
 | `tree_downloaded` | `onDownloadPdf` / `onDownloadImage` | `format` (pdf \| image) |
 | `upgrade_started` | `onSubscribe` | — |
 | `upgrade_completed` | boot, `?paid=1` return | — |

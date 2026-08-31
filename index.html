@@ -1383,7 +1383,7 @@ const App = {
       isRadial: s.viewMode === "radial",
       isRows: s.viewMode === "rows",
       genGroups: genGroups, rowsSummary: rowsSummary,
-      onSetView: (m) => () => { if (this.state.viewMode === m) return; this.setState({ viewMode: m, radialSel: null, radialFocus: null, sheet: null }); track("view_changed", { view: m }); },
+      onSetView: (m) => () => { if (this.state.viewMode === m) return; this.setState({ viewMode: m, radialSel: null, radialFocus: null, sheet: null }); if (m === "rows") track("row_view"); else if (m === "radial") track("Radial_view"); },
       toolsOpen: s.toolsOpen,
       onToggleTools: () => this.setState({ toolsOpen: !this.state.toolsOpen }),
       onRadialClick: (e) => {
