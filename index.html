@@ -1332,7 +1332,13 @@ const App = {
       onNewBoard: () => this.setState({ joining: false, room: this.newCode() }),
       contact: s.contact,
       onContact: e => this.setState({ contact: e.target.value }),
-      onStartBoard: () => { const c = s.contact; this.enterRoom(s.room, true); this.notifyBoard(s.room, c); track("board_created", { has_contact: !!(c && c.trim()) }); },
+      onStartBoard: () => {
+        const code = s.room;
+        this.enterRoom(code, true);
+        track("board_created", {});
+        try { this.copy("https://famroundtable.com/?board=" + code); } catch (e) {}
+        this.setState({ toast: { text: "Board " + code + " created & link copied — save it to get back in (it's also under “Your boards”).", i: "✓", c: this.accent() } }, () => this.flashToast());
+      },
       onJoinBoard: () => {
         const code = s.codeInput.trim();
         if (code.length < 4) { this.setState({ codeError: "Board codes are six characters — check the one you were sent." }); return; }
@@ -1840,7 +1846,7 @@ function viewBoard(V) {
             V.myBoards.length ? h("div", { style: "height:1px; background:#e6ddcc; margin:6px 0 2px" }) : null,
             V.myBoards.length ? h("div", { style: "display:flex; flex-direction:column; gap:3px" },
               h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Your boards"),
-              h("div", { style: "font-size:12px; line-height:1.4; color:#82796a" }, "Boards you've opened on this phone — tap to jump back in, no code needed.")
+              h("div", { style: "font-size:12px; line-height:1.4; color:#82796a" }, "Boards you've opened on this device — tap to jump back in, no code needed.")
             ) : null,
             V.myBoards.map((b, i) => btn({ key: "sb" + i, onClick: V.onEnterSavedBoard(b.code), style: "display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:11px 12px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f5ead8; cursor:pointer", hover: "border-color:#c67139" },
               h("span", { style: "width:36px; height:36px; flex:none; border-radius:999px; background:#c67139; color:#fff2eb; font-family:Caprasimo, serif; font-size:15px; display:flex; align-items:center; justify-content:center" }, (((b.name || "").trim()[0]) || "?").toUpperCase()),
