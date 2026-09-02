@@ -1805,8 +1805,30 @@ const App = {
         ctx.setTransform(scale, 0, 0, scale, 0, 0);
         ctx.drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
-        canvas.toBlob(blob => {
+        canvas.toBlob(async blob => {
           if (!blob) { this.downloadTree("image", total); return; }
+          // On phones/tablets, hand the PNG to the OS share sheet — that's the only
+          // way a web page can reach the photo library ("Save Image" on iOS saves to
+          // Photos; a plain download would land in Files). Desktop just downloads.
+          const touch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+          if (touch && navigator.share && navigator.canShare) {
+            try {
+              const file = new File([blob], fname, { type: "image/png" });
+              if (navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: (s.familyName || "Our family") + " — family tree" });
+                this.setState(st => ({
+                  sheet: null,
+                  log: this.logEntry(st, "downloaded", "the tree as an image", "export"),
+                  toast: { text: "Choose “Save Image” to add it to Photos", i: "✓", c: this.accent() }
+                }), () => this.flashToast());
+                return;
+              }
+            } catch (e) {
+              // user tapped Cancel on the share sheet — don't also force a download
+              if (e && e.name === "AbortError") { this.setState({ sheet: null }); return; }
+              // any other failure: fall through to a normal download
+            }
+          }
           const purl = URL.createObjectURL(blob);
           const a = document.createElement("a"); a.href = purl; a.download = fname;
           document.body.appendChild(a); a.click(); a.remove();
