@@ -683,6 +683,8 @@ const App = {
         // adopt the shared board that already exists
         this._lastWriteJSON = JSON.stringify(data.data);
         Object.assign(this.state, data.data);
+        // Self-heal an orphaned duplicate flag (a lone flag with no pair left).
+        if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.state.people);
         this.applyBilling(data);   // paid status/expiry from server columns (not the blob)
         try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(data.data)); } catch (e) {}
         this._remoteReady = true;
@@ -714,6 +716,7 @@ const App = {
           if (json !== this._lastWriteJSON) {   // skip our own change echoing back
             this._lastWriteJSON = json;
             Object.assign(this.state, incoming);
+            if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.state.people);
             try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(incoming)); } catch (e) {}
             changed = true;
           }
@@ -768,7 +771,7 @@ const App = {
     if (data) {
       Object.assign(this.state, {
         room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null,
-        familyName: data.familyName || "", people: data.people || [], feed: data.feed || [],
+        familyName: data.familyName || "", people: this.resolveFlags(data.people || []), feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
         collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
       });
@@ -1070,7 +1073,7 @@ const App = {
         toastText = "Saved " + name;
       }
       return {
-        people, sheet: null, selected: null, editParentOf: null,
+        people: this.resolveFlags(people), sheet: null, selected: null, editParentOf: null,
         feed: [{ who: st.myName || "You", i: this.initials(st.myName || "You"), c: "#201e1d", text: (st.editIsNew ? "added " : "edited ") + name, t: this.clock() }].concat(st.feed),
         log: this.logEntry(st, st.editIsNew ? "added" : "edited", name, st.editIsNew ? "add" : "edit",
           st.editIsNew ? (dupFound ? "flagged as a possible duplicate" : null) : "details changed"),
