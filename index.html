@@ -1656,13 +1656,17 @@ const App = {
   // stacked, parents centered over their children with elbow connectors, and a
   // clickable + printable "open this tree" link (with the board code) at the foot.
   // A viewBox makes it shrink to fit any page, however big the family gets.
-  treeChartSVG() {
+  treeChartSVG(opts) {
+    opts = opts || {};
+    // The PDF path draws the footer link as real HTML (SVG-internal links aren't
+    // kept by print-to-PDF), so it asks for the chart with no in-SVG footer.
+    const showFooter = !opts.noFooter;
     const s = this.state;
     const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     const clip = (str, n) => { str = String(str || ""); return str.length > n ? str.slice(0, n - 1) + "…" : str; };
     const link = "https://famroundtable.com/?board=" + s.room;
     const people = s.people.filter(p => !p.placeholder && (p.name || "").trim());
-    const NW = 156, NH = 56, HG = 26, VG = 54, PAD = 48, HEADER = 100, FOOTER = 150;
+    const NW = 156, NH = 56, HG = 26, VG = 54, PAD = 48, HEADER = 100, FOOTER = showFooter ? 150 : 36;
 
     if (!people.length) {
       const W = 560, H = 320;
@@ -1721,31 +1725,48 @@ const App = {
       const sub = [this.years(p), partners.length ? "♥ " + partners[0] : ""].filter(Boolean).join("   ");
       if (sub) b += `<text x="${midx}" y="${y + 42}" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#645c50">${esc(clip(sub, 24))}</text>`;
     });
-    // join link — clickable digitally, and the URL/code prints so it's kept forever
-    const fy = offY + treeH + 42, pillW = 340, pillH = 48, pillX = W / 2 - pillW / 2;
-    b += `<a xlink:href="${link}" href="${link}" target="_blank">`;
-    b += `<rect x="${pillX}" y="${fy}" width="${pillW}" height="${pillH}" rx="24" fill="#c67139"/>`;
-    b += `<text x="${W / 2}" y="${fy + 30}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="18" fill="#fff2eb">Open this family tree online →</text>`;
-    b += `<text x="${W / 2}" y="${fy + pillH + 28}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="16" fill="#8c491a">famroundtable.com/?board=${esc(s.room)}</text>`;
-    b += `</a>`;
-    b += `<text x="${W / 2}" y="${H - 20}" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#82796a">Type that link (or board code ${esc(s.room)}) to keep adding — made with Roundtable.</text>`;
+    // join link — clickable digitally, and the URL/code prints so it's kept forever.
+    // Omitted when the caller (PDF) will render it as real, clickable HTML instead.
+    if (showFooter) {
+      const fy = offY + treeH + 42, pillW = 340, pillH = 48, pillX = W / 2 - pillW / 2;
+      b += `<a xlink:href="${link}" href="${link}" target="_blank">`;
+      b += `<rect x="${pillX}" y="${fy}" width="${pillW}" height="${pillH}" rx="24" fill="#c67139"/>`;
+      b += `<text x="${W / 2}" y="${fy + 30}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="18" fill="#fff2eb">Open this family tree online →</text>`;
+      b += `<text x="${W / 2}" y="${fy + pillH + 28}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="16" fill="#8c491a">famroundtable.com/?board=${esc(s.room)}</text>`;
+      b += `</a>`;
+      b += `<text x="${W / 2}" y="${H - 20}" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#82796a">Type that link (or board code ${esc(s.room)}) to keep adding — made with Roundtable.</text>`;
+    }
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${b}</svg>`;
-    return { svg: svg, w: W, h: H };
+    return { svg: svg, w: W, h: H, link: link, room: s.room };
   },
   downloadTree(kind, total) {
     // Self-contained printable page: the tree chart as inline SVG, scaled to fit
     // one page, with the join link clickable when viewed and printed for keeps.
     const s = this.state;
     const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-    const chart = this.treeChartSVG().svg;
+    // No footer inside the SVG — we render the join link as real HTML below it so
+    // it stays a genuine, clickable link in the exported PDF (and the saved page).
+    const c = this.treeChartSVG({ noFooter: true });
     const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(s.familyName || "Family")} — Roundtable</title>
-      <style>html,body{margin:0;height:100%;background:#f5ead8}
-      .page{box-sizing:border-box;width:100%;height:100%;padding:14px;display:flex;align-items:center;justify-content:center}
-      svg{width:100%;height:100%}
+      <style>html,body{margin:0;height:100%;background:#f5ead8;font-family:Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .page{box-sizing:border-box;width:100%;height:100%;padding:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+      .tree{flex:1 1 auto;min-height:0;width:100%;display:flex;align-items:center;justify-content:center}
+      .tree svg{width:100%;height:100%}
+      .foot{flex:0 0 auto;text-align:center}
+      .foot a.pill{display:inline-block;text-decoration:none;background:#c67139;color:#fff2eb;font-weight:bold;font-size:18px;padding:13px 26px;border-radius:24px}
+      .foot .url{margin-top:9px;font-weight:bold;font-size:16px;color:#8c491a}
+      .foot .note{margin-top:7px;font-size:11px;color:#82796a}
       @media print{@page{size:landscape;margin:8mm}html,body{background:#fff}}</style></head>
       <body onload="${kind === 'pdf' ? 'window.print()' : ''}">
-      <div class="page">${chart}</div>
+      <div class="page">
+        <div class="tree">${c.svg}</div>
+        <div class="foot">
+          <a class="pill" href="${esc(c.link)}" target="_blank" rel="noopener">Open this family tree online →</a>
+          <div class="url">famroundtable.com/?board=${esc(c.room)}</div>
+          <div class="note">Type that link (or board code ${esc(c.room)}) to keep adding — made with Roundtable.</div>
+        </div>
+      </div>
       </body></html>`;
     const url = URL.createObjectURL(new Blob([doc], { type: "text/html" }));
     const a = document.createElement("a");
