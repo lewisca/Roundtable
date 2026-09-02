@@ -441,7 +441,7 @@ const App = {
       patch(this._root, this._vnode, next, 0);
     }
     this._vnode = next;
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { this.syncGenArrows(); this.syncRadial(); });
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { this.syncGenArrows(); this.syncRadial(); this.syncDownloadPreview(); });
   },
   // Show the generation-filter scroll arrows only when the row overflows.
   syncGenArrows() {
@@ -543,6 +543,18 @@ const App = {
     if (host._sig === sig) return;
     host._sig = sig;
     host.innerHTML = this.radialSVG();
+  },
+  // Live preview of the downloadable tree, injected into #dl-host on the sheet.
+  syncDownloadPreview() {
+    if (this.state.sheet !== "download" || this.state.step !== "app") return;
+    const host = document.getElementById("dl-host");
+    if (!host) return;
+    const sig = this.state.people.map(p => p.id + ":" + (p.parentId || "")).join(",") + "|" + this.state.familyName + "|" + this.state.room;
+    if (host._sig === sig) return;
+    host._sig = sig;
+    host.innerHTML = this.treeChartSVG().svg;
+    const svg = host.querySelector("svg");
+    if (svg) { svg.removeAttribute("width"); svg.removeAttribute("height"); svg.style.width = "100%"; svg.style.height = "100%"; svg.style.display = "block"; }
   },
 
   /* ---- persistence -------------------------------------------------- */
@@ -1182,6 +1194,11 @@ const App = {
     const anyPlaceholder = realPeople.length !== s.people.length;
     const total = realPeople.length + realPeople.reduce((n, p) => n + this.partnersOf(p).filter(pp => pp.name).length, 0);
     const gens = s.people.reduce((m, p) => Math.max(m, this.depthOf(p) + 1), 1);
+    // A downloaded tree's width ≈ its leaf count; past ~12 columns it prints
+    // cramped on a normal sheet and is best viewed digitally or printed large.
+    const realIds = {}; realPeople.forEach(p => { realIds[p.id] = true; });
+    const hasKid = {}; realPeople.forEach(p => { if (p.parentId && realIds[p.parentId]) hasKid[p.parentId] = true; });
+    const bigTree = realPeople.filter(p => !hasKid[p.id]).length > 12;
     const genCounts = [];
     s.people.forEach(p => { const d = this.depthOf(p); genCounts[d] = (genCounts[d] || 0) + 1; });
     const genFilters = [{ key: "all", label: "All", color: this.accent(), count: null }]
@@ -1625,7 +1642,8 @@ const App = {
         window.open("sms:?&body=" + body, "_blank");
         this.setState({ sheet: null, toast: { text: "Opening Messages with the code", i: "✓", c: this.accent() } }, () => this.flashToast());
       },
-      posterLine: "A printable sheet of all " + total + " people, in the order they sit on the tree.",
+      posterLine: "A top-down family tree of all " + total + " people, shrunk to fit one page — with a link back to the board.",
+      bigTree: bigTree,
       toastText: s.toast ? s.toast.text : null,
       toastInitial: s.toast ? s.toast.i : "",
       toastColor: s.toast ? s.toast.c : "#c67139"
@@ -1634,32 +1652,102 @@ const App = {
 
   copy(text) { try { navigator.clipboard && navigator.clipboard.writeText(text); } catch (e) {} },
 
-  downloadTree(kind, total) {
-    // Real, free export: a self-contained printable HTML of the whole tree.
+  // A traditional top-down genealogy chart as one self-contained SVG: generations
+  // stacked, parents centered over their children with elbow connectors, and a
+  // clickable + printable "open this tree" link (with the board code) at the foot.
+  // A viewBox makes it shrink to fit any page, however big the family gets.
+  treeChartSVG() {
     const s = this.state;
-    const rows = this.flatten(false, true).filter(r => r.isCard);
     const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-    const rowHtml = rows.map(r => `<div style="display:flex;align-items:flex-start;gap:10px;margin-left:${r.depth * 22}px;padding:8px 12px;border-left:5px solid ${r.color};margin-bottom:6px">
-        ${r.photo
-          ? `<img src="${r.photo}" alt="" style="width:38px;height:38px;flex:none;border-radius:50%;object-fit:cover;border:2px solid ${r.color}">`
-          : `<span style="width:38px;height:38px;flex:none;border-radius:50%;background:${r.soft};border:2px solid ${r.color};color:${r.color};font-weight:700;font-size:13px;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center">${esc(r.initials)}</span>`}
-        <div style="min-width:0">
-          <strong style="font-size:16px">${esc(r.name)}</strong> <span style="color:#82796a">${esc(r.years)}</span>
-          ${r.partners.map(pt => ` &nbsp;♥ ${esc(pt.name)} <span style="color:#82796a">${esc(pt.years)}</span>`).join("")}${r.coParent ? ` <span style="color:#82796a; font-style:italic">· with ${esc(r.coParent)}</span>` : ""}
-          ${r.detail ? `<div style="color:#645c50;font-size:13px">${esc(r.detail)}</div>` : ""}
-        </div>
-      </div>`).join("");
+    const clip = (str, n) => { str = String(str || ""); return str.length > n ? str.slice(0, n - 1) + "…" : str; };
+    const link = "https://famroundtable.com/?board=" + s.room;
+    const people = s.people.filter(p => !p.placeholder && (p.name || "").trim());
+    const NW = 156, NH = 56, HG = 26, VG = 54, PAD = 48, HEADER = 100, FOOTER = 150;
+
+    if (!people.length) {
+      const W = 560, H = 320;
+      let e = `<rect x="0" y="0" width="${W}" height="${H}" fill="#f5ead8"/>`;
+      e += `<text x="${W / 2}" y="150" text-anchor="middle" font-family="Georgia,serif" font-weight="bold" font-size="30" fill="#201e1d">${esc(s.familyName || "Our Family")}</text>`;
+      e += `<text x="${W / 2}" y="185" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" fill="#645c50">No names on the tree yet.</text>`;
+      return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${e}</svg>`, w: W, h: H };
+    }
+
+    const byId = {}; people.forEach(p => byId[p.id] = p);
+    const kids = {}; people.forEach(p => { const pid = (p.parentId && byId[p.parentId]) ? p.parentId : "__root"; (kids[pid] = kids[pid] || []).push(p); });
+    const roots = kids["__root"] || [];
+    const pos = {}; let cursor = 0, maxDepth = 0;
+    const place = (node, depth) => {
+      maxDepth = Math.max(maxDepth, depth);
+      const ch = kids[node.id] || [];
+      let col;
+      if (!ch.length) { col = cursor; cursor += 1; }
+      else { ch.forEach(c => place(c, depth + 1)); col = (pos[ch[0].id].col + pos[ch[ch.length - 1].id].col) / 2; }
+      pos[node.id] = { col: col, depth: depth };
+    };
+    roots.forEach(r => { place(r, 0); cursor += 1; });   // blank column between separate root families
+
+    const colW = NW + HG;
+    const cx = id => pos[id].col * colW + NW / 2;
+    const topY = id => pos[id].depth * (NH + VG);
+    const treeW = Math.max(1, cursor) * colW - HG;
+    const treeH = (maxDepth + 1) * NH + maxDepth * VG;
+    const contentW = Math.max(treeW, 560);
+    const W = contentW + PAD * 2;
+    const H = HEADER + treeH + FOOTER + PAD * 2;
+    const offX = PAD + (contentW - treeW) / 2;
+    const offY = PAD + HEADER;
+
+    let b = `<rect x="0" y="0" width="${W}" height="${H}" fill="#f5ead8"/>`;
+    b += `<text x="${W / 2}" y="${PAD + 46}" text-anchor="middle" font-family="Georgia,serif" font-weight="bold" font-size="42" fill="#201e1d">${esc(s.familyName || "Our Family")}</text>`;
+    b += `<text x="${W / 2}" y="${PAD + 76}" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" letter-spacing="2" fill="#8c491a">BOARD ${esc(s.room)} · ${esc(people.length)} PEOPLE</text>`;
+    // connectors (parent → children), coloured by the parent's generation
+    people.forEach(p => {
+      const ch = kids[p.id] || [];
+      if (!ch.length) return;
+      const col = this.gen(pos[p.id].depth).color;
+      const px = offX + cx(p.id), pBot = offY + topY(p.id) + NH, busY = pBot + VG / 2;
+      b += `<path d="M ${px} ${pBot} V ${busY}" stroke="${col}" stroke-width="2" fill="none"/>`;
+      if (ch.length > 1) b += `<path d="M ${offX + cx(ch[0].id)} ${busY} H ${offX + cx(ch[ch.length - 1].id)}" stroke="${col}" stroke-width="2" fill="none"/>`;
+      ch.forEach(c => { b += `<path d="M ${offX + cx(c.id)} ${busY} V ${offY + topY(c.id)}" stroke="${col}" stroke-width="2" fill="none"/>`; });
+    });
+    // nodes
+    people.forEach(p => {
+      const g = this.gen(pos[p.id].depth);
+      const x = offX + cx(p.id) - NW / 2, y = offY + topY(p.id), midx = x + NW / 2;
+      b += `<rect x="${x}" y="${y}" width="${NW}" height="${NH}" rx="12" fill="#fffaf3" stroke="${g.color}" stroke-width="2"/>`;
+      b += `<rect x="${x}" y="${y}" width="6" height="${NH}" rx="3" fill="${g.color}"/>`;
+      b += `<text x="${midx}" y="${y + 24}" text-anchor="middle" font-family="Georgia,serif" font-weight="bold" font-size="15" fill="#201e1d">${esc(clip(p.name, 18))}</text>`;
+      const partners = this.partnersOf(p).map(pp => pp.name).filter(Boolean);
+      const sub = [this.years(p), partners.length ? "♥ " + partners[0] : ""].filter(Boolean).join("   ");
+      if (sub) b += `<text x="${midx}" y="${y + 42}" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#645c50">${esc(clip(sub, 24))}</text>`;
+    });
+    // join link — clickable digitally, and the URL/code prints so it's kept forever
+    const fy = offY + treeH + 42, pillW = 340, pillH = 48, pillX = W / 2 - pillW / 2;
+    b += `<a xlink:href="${link}" href="${link}" target="_blank">`;
+    b += `<rect x="${pillX}" y="${fy}" width="${pillW}" height="${pillH}" rx="24" fill="#c67139"/>`;
+    b += `<text x="${W / 2}" y="${fy + 30}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="18" fill="#fff2eb">Open this family tree online →</text>`;
+    b += `<text x="${W / 2}" y="${fy + pillH + 28}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="16" fill="#8c491a">famroundtable.com/?board=${esc(s.room)}</text>`;
+    b += `</a>`;
+    b += `<text x="${W / 2}" y="${H - 20}" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#82796a">Type that link (or board code ${esc(s.room)}) to keep adding — made with Roundtable.</text>`;
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${b}</svg>`;
+    return { svg: svg, w: W, h: H };
+  },
+  downloadTree(kind, total) {
+    // Self-contained printable page: the tree chart as inline SVG, scaled to fit
+    // one page, with the join link clickable when viewed and printed for keeps.
+    const s = this.state;
+    const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    const chart = this.treeChartSVG().svg;
     const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(s.familyName || "Family")} — Roundtable</title>
-      <style>body{font-family:Georgia,serif;color:#201e1d;max-width:820px;margin:40px auto;padding:0 24px;background:#f5ead8}
-      h1{font-size:38px;margin:0}h2{margin-top:40px}@media print{body{background:#fff}}</style></head>
+      <style>html,body{margin:0;height:100%;background:#f5ead8}
+      .page{box-sizing:border-box;width:100%;height:100%;padding:14px;display:flex;align-items:center;justify-content:center}
+      svg{width:100%;height:100%}
+      @media print{@page{size:landscape;margin:8mm}html,body{background:#fff}}</style></head>
       <body onload="${kind === 'pdf' ? 'window.print()' : ''}">
-      <div style="text-transform:uppercase;letter-spacing:.16em;color:#8c491a;font-size:12px">Board ${esc(s.room)} · ${esc(total)} people</div>
-      <h1>${esc(s.familyName || "Our Family")}</h1>
-      <h2>The tree</h2>${rowHtml}
-      <p style="color:#82796a;font-size:12px;margin-top:30px">Made with Roundtable — the family tree you build together.</p>
+      <div class="page">${chart}</div>
       </body></html>`;
-    const blob = new Blob([doc], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([doc], { type: "text/html" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = (s.familyName || "family").replace(/[^a-z0-9]+/gi, "-").toLowerCase() + "-tree.html";
@@ -1668,51 +1756,18 @@ const App = {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
     this.setState(st => ({
       sheet: null,
-      log: this.logEntry(st, "downloaded", kind === "pdf" ? "the tree as a PDF" : "the tree as an image", "export"),
-      toast: { text: kind === "pdf" ? "Printable sheet opened — " + total + " people" : "Tree saved — open it any time", i: "✓", c: this.accent() }
+      log: this.logEntry(st, "downloaded", kind === "pdf" ? "the tree as a PDF" : "the tree as a page", "export"),
+      toast: { text: kind === "pdf" ? "Printable tree opened — " + total + " people" : "Tree page saved — open it any time", i: "✓", c: this.accent() }
     }), () => this.flashToast());
   },
 
-  // Renders the whole tree to a real PNG (native SVG → canvas),
-  // so "Download as image" produces an actual image of the tree. Falls back to
-  // the printable HTML if the browser can't export the canvas.
+  // Renders the traditional tree chart to a real PNG (native SVG → canvas).
+  // Falls back to the printable page if the browser can't export the canvas.
   downloadImage(total) {
     const s = this.state;
-    const rows = this.flatten(false, true).filter(r => r.isCard);
-    const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-    const W = 980, P = 46, headTop = 58, treeTop = 132, rowH = 66;
-    const treeH = rows.length * rowH;
-    const H = treeTop + treeH + 46;
-    let b = "";
-    b += `<rect x="0" y="0" width="${W}" height="${H}" fill="#f5ead8"/>`;
-    b += `<text x="${P}" y="${headTop}" font-family="Georgia,serif" font-weight="bold" font-size="40" fill="#201e1d">${esc(s.familyName || "Our Family")}</text>`;
-    b += `<text x="${P}" y="${headTop + 30}" font-family="Arial,sans-serif" font-size="15" letter-spacing="2" fill="#8c491a">BOARD ${esc(s.room)} · ${esc(total)} PEOPLE</text>`;
-    rows.forEach((r, i) => {
-      const y = treeTop + i * rowH;
-      const x = P + Math.min(r.depth, 6) * 28;
-      const midY = y + 23;
-      b += `<rect x="${x}" y="${y}" width="6" height="${rowH - 16}" rx="3" fill="${r.color}"/>`;
-      const ax = x + 32;
-      if (r.photo) {
-        b += `<clipPath id="pc${i}"><circle cx="${ax}" cy="${midY}" r="17"/></clipPath>`;
-        b += `<image x="${ax - 17}" y="${midY - 17}" width="34" height="34" preserveAspectRatio="xMidYMid slice" clip-path="url(#pc${i})" href="${r.photo}" xlink:href="${r.photo}"/>`;
-        b += `<circle cx="${ax}" cy="${midY}" r="17" fill="none" stroke="${r.color}" stroke-width="2.5"/>`;
-      } else {
-        b += `<circle cx="${ax}" cy="${midY}" r="17" fill="${r.soft}" stroke="${r.color}" stroke-width="2.5"/>`;
-        b += `<text x="${ax}" y="${midY + 4}" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="12" fill="${r.color}">${esc(r.initials)}</text>`;
-      }
-      const tx = ax + 30;
-      b += `<text x="${tx}" y="${midY - 3}" font-family="Georgia,serif" font-weight="bold" font-size="20" fill="#201e1d">${esc(r.name)}<tspan font-family="Arial,sans-serif" font-weight="normal" font-size="12" fill="#82796a">   ${esc(r.years)}</tspan></text>`;
-      const sub = [];
-      r.partners.forEach(pt => sub.push("♥ " + pt.name + (pt.years ? " " + pt.years : "")));
-      if (r.coParent) sub.push("with " + r.coParent);
-      if (r.detail) sub.push(r.detail);
-      if (sub.length) b += `<text x="${tx}" y="${midY + 15}" font-family="Arial,sans-serif" font-size="12" fill="#645c50">${esc(sub.join("   ·   "))}</text>`;
-    });
-    b += `<text x="${P}" y="${H - 20}" font-family="Arial,sans-serif" font-size="11" fill="#82796a">Made with Roundtable — the family tree you build together.</text>`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${b}</svg>`;
+    const chart = this.treeChartSVG();
     const fname = ((s.familyName || "family").replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/^-+|-+$/g, "") || "family") + "-tree.png";
-    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+    const url = URL.createObjectURL(new Blob([chart.svg], { type: "image/svg+xml;charset=utf-8" }));
     const finish = () => this.setState(st => ({
       sheet: null,
       log: this.logEntry(st, "downloaded", "the tree as an image", "export"),
@@ -1721,10 +1776,12 @@ const App = {
     const img = new Image();
     img.onload = () => {
       try {
-        const scale = 2, canvas = document.createElement("canvas");
-        canvas.width = W * scale; canvas.height = H * scale;
+        // crisp, but cap the longest side so a huge family stays a sane file size
+        const scale = Math.min(3, 2800 / Math.max(chart.w, chart.h));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(chart.w * scale); canvas.height = Math.round(chart.h * scale);
         const ctx = canvas.getContext("2d");
-        ctx.scale(scale, scale);
+        ctx.setTransform(scale, 0, 0, scale, 0, 0);
         ctx.drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
         canvas.toBlob(blob => {
@@ -2790,12 +2847,16 @@ function downloadSheet(V) {
       ),
       closeX(V.onCloseSheet)
     ),
-    h("div", { style: "height:172px; border-radius:20px; border:1.5px solid #dcd3c4; background:repeating-linear-gradient(45deg,#dcd3c4 0 8px,#eee7db 8px 16px)" }),
+    h("div", { key: "dlhost", id: "dl-host", raw: true, style: "height:200px; border-radius:20px; border:1.5px solid #dcd3c4; background:#fffaf3; padding:10px; overflow:hidden; display:flex; align-items:center; justify-content:center" }),
+    V.bigTree ? h("div", { style: "padding:13px 15px; border-radius:18px; background:#fff2eb; border:1.5px solid #f6a06b; font-size:12.5px; line-height:1.5; color:#8c491a" },
+      h("span", { style: "font-weight:800" }, "📐 This is a big tree. "),
+      "It still fits one page, but the names get small at letter size. It's vector, so it stays crisp at any size — for a fully readable copy, choose a large paper size (A3/A2 or “poster”) in the print dialog, or view the PDF on screen and zoom in."
+    ) : null,
     h("div", { style: "display:flex; flex-direction:column; gap:9px" },
-      btn({ onClick: V.onDownloadPdf, style: "font-size:15px; font-weight:800; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Download as PDF"),
+      btn({ onClick: V.onDownloadPdf, style: "font-size:15px; font-weight:800; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.bigTree ? "Download as PDF (best for large print)" : "Download as PDF"),
       btn({ onClick: V.onDownloadImage, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #c67139; background:transparent; color:#8c491a; cursor:pointer", hover: "background:#fff2eb" }, "Download as image")
     ),
-    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "Both include every name and the generation colours. Free, and yours to keep.")
+    h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "The whole family as a tree on one page, with a link (and the board code) to reopen it — tappable in the PDF, printed for keeps. Free, and yours to keep.")
   );
 }
 
