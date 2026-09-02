@@ -66,10 +66,10 @@
 <style>
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  /* Crawlable fallback content. Hidden from the running app (JS visitors get the
-     real UI in #device); non-rendering crawlers still read the text from source,
-     and a <noscript> block below reveals it for JS-off humans. */
-  #seo { display: none; }
+  /* Crawlable landing content. Visible in the initial HTML (so crawlers and
+     visible-text extractors read it at full weight — NOT display:none, which
+     Google discounts). An inline script hides it the instant the app boots, so
+     JS visitors get the real UI in #device with no flash. */
   #seo { max-width: 720px; margin: 0 auto; padding: 40px 22px 60px; color: #201e1d; font-family: Figtree, system-ui, sans-serif; line-height: 1.55; }
   #seo h1 { font-family: Caprasimo, serif; font-size: 34px; line-height: 1.1; margin: 0 0 14px; }
   #seo h2 { font-family: Caprasimo, serif; font-size: 22px; margin: 30px 0 8px; }
@@ -189,6 +189,10 @@
     <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a><br>© 2026 All Rights Reserved
   </p>
 </div>
+<!-- The crawlable content above is real, visible HTML. Hide it the instant we
+     know JS is running (before the app scripts load and before first paint) so
+     visitors see the live app with no flash; crawlers/no-JS still get the text. -->
+<script>(function(){var s=document.getElementById("seo");if(s)s.style.display="none";})();</script>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- Mixpanel (analytics). Anonymous device-id tracking; no accounts/PII. -->
