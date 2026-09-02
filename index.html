@@ -1958,7 +1958,10 @@ function viewLanding(V) {
     ),
     h("div", { style: "display:flex; flex-direction:column; gap:14px" },
       h("div", { style: "font-family:Caprasimo, serif; font-size:38px; line-height:1.05; text-wrap:pretty" }, "The family tree you build together, and keep adding to."),
-      h("div", { style: "font-size:17px; line-height:1.55; color:#645c50; text-wrap:pretty" }, "Share one board code. Everyone fills in the branch they know best, and the tree keeps growing — new babies, new marriages, years later.")
+      h("div", { style: "font-size:17px; line-height:1.55; color:#645c50; text-wrap:pretty" }, "Share one board code. Everyone fills in the branch they know best, and the tree keeps growing — new babies, new marriages, years later."),
+      h("div", { style: "font-size:15px; line-height:1.5; color:#82796a; text-wrap:pretty" },
+        h("span", { style: "font-weight:700; color:#8c491a" }, "Perfect for "),
+        "reunions, holidays, graduations, funerals, milestone birthdays.")
     ),
     h("div", { style: "display:flex; flex-direction:column; gap:11px" },
       btn({ onClick: V.onStartNow, style: "font-size:19px; font-weight:800; padding:19px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.2)", hover: "background:#b2622d" }, "Create free family tree"),
