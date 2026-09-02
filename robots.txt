@@ -1,0 +1,5 @@
+# Roundtable — allow all crawlers
+User-agent: *
+Allow: /
+
+Sitemap: https://famroundtable.com/sitemap.xml

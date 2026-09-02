@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Roundtable — the family tree you build together</title>
-<meta name="description" content="Share one board code. Everyone fills in the branch they know best, and the tree keeps growing.">
+<title>Roundtable — Build Your Family Tree Together, Free</title>
+<meta name="description" content="A free, collaborative family tree. Share one board code and everyone adds the branch they know best — no accounts, no software. Perfect for reunions.">
+<link rel="canonical" href="https://famroundtable.com/">
 <meta name="theme-color" content="#c67139">
 <!-- Browser-tab / bookmark / home-screen icon: the Roundtable "R" mark -->
 <link rel="icon" href="favicon.ico" sizes="any">
@@ -14,16 +15,46 @@
 <link rel="apple-touch-icon" sizes="180x180" href="roundtable-appicon.png">
 <!-- Link-preview card (iMessage, Slack, Facebook, X, WhatsApp, …) -->
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Roundtable">
+<meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://famroundtable.com/">
-<meta property="og:title" content="Roundtable — the family tree you build together">
-<meta property="og:description" content="Share one board code. Everyone fills in the branch they know best, and the tree keeps growing.">
+<meta property="og:title" content="Roundtable — Build Your Family Tree Together, Free">
+<meta property="og:description" content="A free, collaborative family tree. Share one board code and everyone adds the branch they know best — no accounts, no software. Perfect for reunions.">
 <meta property="og:image" content="https://famroundtable.com/roundtable-share.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Roundtable — the family tree you build together">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Roundtable — the family tree you build together">
-<meta name="twitter:description" content="Share one board code. Everyone fills in the branch they know best, and the tree keeps growing.">
+<meta name="twitter:title" content="Roundtable — Build Your Family Tree Together, Free">
+<meta name="twitter:description" content="A free, collaborative family tree. Share one board code and everyone adds the branch they know best — no accounts, no software. Perfect for reunions.">
 <meta name="twitter:image" content="https://famroundtable.com/roundtable-share.png">
+<meta name="twitter:image:alt" content="Roundtable — the family tree you build together">
+<!-- Structured data: helps search engines understand the product -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Roundtable",
+  "url": "https://famroundtable.com/",
+  "description": "A free, collaborative family tree. Share one board code and everyone adds the branch they know best — no accounts, no software. Perfect for family reunions.",
+  "applicationCategory": "LifestyleApplication",
+  "operatingSystem": "Web browser",
+  "image": "https://famroundtable.com/roundtable-share.png",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD",
+    "description": "Free to build; an optional $19.99/year keeps a board editable after the first week."
+  },
+  "featureList": [
+    "Collaborative family tree everyone can edit with one shared code",
+    "No accounts or downloads required",
+    "Add photos, dates, and stories for each person",
+    "Download the whole tree as a printable poster",
+    "Great for family reunions and gatherings"
+  ]
+}
+</script>
 <!-- Added to the Home Screen, Roundtable launches chrome-free — true fullscreen for projecting from a phone -->
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -35,6 +66,15 @@
 <style>
   * { box-sizing: border-box; }
   html, body { height: 100%; }
+  /* Crawlable fallback content. Hidden from the running app (JS visitors get the
+     real UI in #device); non-rendering crawlers still read the text from source,
+     and a <noscript> block below reveals it for JS-off humans. */
+  #seo { display: none; }
+  #seo { max-width: 720px; margin: 0 auto; padding: 40px 22px 60px; color: #201e1d; font-family: Figtree, system-ui, sans-serif; line-height: 1.55; }
+  #seo h1 { font-family: Caprasimo, serif; font-size: 34px; line-height: 1.1; margin: 0 0 14px; }
+  #seo h2 { font-family: Caprasimo, serif; font-size: 22px; margin: 30px 0 8px; }
+  #seo p, #seo li { font-size: 16px; color: #46413a; }
+  #seo a { color: #8c491a; }
   body {
     margin: 0;
     background: #e4d9c2;
@@ -126,6 +166,26 @@
 </head>
 <body>
 <div id="stage"><div id="device"></div></div>
+
+<!-- Crawlable description of the product (hidden from the app; read by crawlers,
+     and shown to visitors who have JavaScript disabled via the <noscript> below). -->
+<noscript><style>#seo{display:block!important}#stage{display:none}</style></noscript>
+<div id="seo">
+  <h1>Build your family tree together</h1>
+  <p><strong>Roundtable</strong> is a free, collaborative family tree you build with your whole family. Share one board code, and everyone adds the branch they know best — grandparents, cousins, the names only one aunt remembers. No accounts, no software, nothing to install.</p>
+  <h2>How it works</h2>
+  <ul>
+    <li><strong>Start a board</strong> and give it your family name — it's free.</li>
+    <li><strong>Share the board code</strong> with relatives by text, email, or link.</li>
+    <li><strong>Everyone adds people</strong> — dates, places, photos, and stories.</li>
+    <li><strong>Watch the tree grow</strong> in real time as the family fills it in.</li>
+  </ul>
+  <h2>Made for family reunions</h2>
+  <p>Roundtable is perfect for reunions and gatherings: put the shared code on the invitation, project the living tree on a TV, and download the whole family as a printable poster to keep forever.</p>
+  <h2>Free to use</h2>
+  <p>Building your tree is free. An optional subscription ($19.99/year) keeps a board editable after the first week — the tree stays viewable to everyone either way.</p>
+  <p><a href="https://famroundtable.com/">Open Roundtable to start your family tree →</a></p>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- Mixpanel (analytics). Anonymous device-id tracking; no accounts/PII. -->
