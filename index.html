@@ -185,6 +185,9 @@
   <h2>Free to use</h2>
   <p>Building your tree is free. An optional subscription ($19.99/year) keeps a board editable after the first week — the tree stays viewable to everyone either way.</p>
   <p><a href="https://famroundtable.com/">Open Roundtable to start your family tree →</a></p>
+  <p style="margin-top:30px;font-size:13px;color:#82796a;border-top:1px solid #dcd3c4;padding-top:16px">
+    <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a><br>© 2026 All Rights Reserved
+  </p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1459,6 +1462,7 @@ const App = {
       zoom: s.zoom,
       query: s.query,
       onQuery: e => this.setState({ query: e.target.value }),
+      onClearQuery: () => this.setState({ query: "" }),
       onExpandAll: () => this.setState({ collapsed: {} }),
       onCollapseAll: () => this.setState(st => {
         const c = {};
@@ -1969,6 +1973,15 @@ function viewLanding(V) {
           h("span", { style: "font-size:14px; line-height:1.45; color:#645c50" }, b.body)
         )
       ))
+    ),
+    // Footer — legal links + copyright.
+    h("div", { style: "margin-top:auto; padding-top:18px; display:flex; flex-direction:column; align-items:center; gap:7px; border-top:1px solid #dcd3c4" },
+      h("div", { style: "display:flex; align-items:center; gap:14px; font-size:13px" },
+        h("a", { href: "privacy.html", style: "color:#8c491a; text-decoration:none; font-weight:600" }, "Privacy"),
+        h("span", { style: "color:#c9bda6" }, "·"),
+        h("a", { href: "terms.html", style: "color:#8c491a; text-decoration:none; font-weight:600" }, "Terms")
+      ),
+      h("div", { style: "font-size:12px; color:#82796a" }, "© 2026 All Rights Reserved")
     )
   );
 }
@@ -2174,7 +2187,10 @@ function appHeader(V, wide) {
     // generation filters on their own line so they can side-scroll freely.
     (!V.isRadial && V.toolsOpen) ? h("div", { style: "display:flex; flex-direction:column; gap:7px" },
       h("div", { style: "display:flex; align-items:center; gap:7px" },
-        inp({ value: V.query, onChange: V.onQuery, placeholder: "Find a name, a town, a year…", style: "flex:1; min-width:0; font-size:14px; padding:10px 15px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+        h("div", { style: "position:relative; flex:1; min-width:0; display:flex" },
+          inp({ value: V.query, onChange: V.onQuery, placeholder: "Find a name, a town, a year…", style: "flex:1; min-width:0; font-size:14px; padding:10px " + (V.query && V.query.trim() ? "38px" : "15px") + " 10px 15px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
+          (V.query && V.query.trim()) ? btn({ onClick: V.onClearQuery, title: "Clear search", "aria-label": "Clear search", style: "position:absolute; right:6px; top:50%; transform:translateY(-50%); width:24px; height:24px; display:flex; align-items:center; justify-content:center; padding:0; border:none; border-radius:999px; background:#e4d9c2; color:#645c50; font-size:13px; line-height:1; cursor:pointer", hover: "background:#d8cbb2; color:#201e1d" }, "✕") : null
+        ),
         (!V.isRows) ? btn({ onClick: V.onExpandAll, title: "Expand every branch", style: miniBtn, hover: "border-color:#c67139; color:#8c491a" }, "Expand") : null,
         (!V.isRows) ? btn({ onClick: V.onCollapseAll, title: "Collapse every branch", style: miniBtn, hover: "border-color:#c67139; color:#8c491a" }, "Collapse") : null
       ),
