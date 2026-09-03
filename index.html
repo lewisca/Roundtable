@@ -47,11 +47,44 @@
     "description": "Free to build; an optional $19.99/year keeps a board editable after the first week."
   },
   "featureList": [
-    "Collaborative family tree everyone can edit with one shared code",
+    "Collaborative family tree everyone can edit with one shared link",
     "No accounts or downloads required",
     "Add photos, dates, and stories for each person",
     "Download the whole tree as a printable poster",
     "Great for family reunions and gatherings"
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is this for genealogy research?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. Roundtable is built for families who already know each other and want to see how everyone connects. There are no historical records to search and no DNA testing — just a shared tree your family builds together." }
+    },
+    {
+      "@type": "Question",
+      "name": "What kinds of gatherings is this for?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Reunions, holidays, graduations, milestone birthdays, funerals, or even on a regular day. Any time someone wants to share something about their family history from afar, or the family is in one place and nobody can quite explain how everyone is related." }
+    },
+    {
+      "@type": "Question",
+      "name": "How do relatives get access?",
+      "acceptedAnswer": { "@type": "Answer", "text": "You share one link. Anyone with it can view the tree and add themselves — no separate signups, no invitations to manage, no per-person cost." }
+    },
+    {
+      "@type": "Question",
+      "name": "What does it cost?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Joining a tree is free. One membership of $19.99 per year keeps the tree editable for every family member, no matter how many people are on it. There are no per-person subscriptions." }
+    },
+    {
+      "@type": "Question",
+      "name": "What happens if two people add the same relative?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Duplicates get flagged rather than overwritten. Nothing anyone contributes gets silently replaced by someone else's edit." }
+    }
   ]
 }
 </script>
@@ -73,6 +106,7 @@
   #seo { max-width: 720px; margin: 0 auto; padding: 40px 22px 60px; color: #201e1d; font-family: Figtree, system-ui, sans-serif; line-height: 1.55; }
   #seo h1 { font-family: Caprasimo, serif; font-size: 34px; line-height: 1.1; margin: 0 0 14px; }
   #seo h2 { font-family: Caprasimo, serif; font-size: 22px; margin: 30px 0 8px; }
+  #seo h3 { font-size: 17px; font-weight: 800; margin: 20px 0 4px; }
   #seo p, #seo li { font-size: 16px; color: #46413a; }
   #seo a { color: #8c491a; }
   body {
@@ -172,18 +206,18 @@
 <noscript><style>#seo{display:block!important}#stage{display:none}</style></noscript>
 <div id="seo">
   <h1>Build your family tree together</h1>
-  <p><strong>Roundtable</strong> is a free, collaborative family tree you build with your whole family. Share one board code, and everyone adds the branch they know best — grandparents, cousins, the names only one aunt remembers. No accounts, no software, nothing to install.</p>
-  <h2>How it works</h2>
-  <ul>
-    <li><strong>Start a board</strong> and give it your family name — it's free.</li>
-    <li><strong>Share the board code</strong> with relatives by text, email, or link.</li>
-    <li><strong>Everyone adds people</strong> — dates, places, photos, and stories.</li>
-    <li><strong>Watch the tree grow</strong> in real time as the family fills it in.</li>
-  </ul>
-  <h2>Made for family reunions</h2>
-  <p>Roundtable is perfect for reunions and gatherings: put the shared code on the invitation, project the living tree on a TV, and download the whole family as a printable poster to keep forever.</p>
-  <h2>Free to use</h2>
-  <p>Building your tree is free. An optional subscription ($19.99/year) keeps a board editable after the first week — the tree stays viewable to everyone either way.</p>
+  <p><strong>Roundtable</strong> is a free, collaborative family tree you build with your whole family. Share one link, and everyone adds the branch they know best — grandparents, cousins, the names only one aunt remembers. No accounts, no software, nothing to install. Perfect for reunions, holidays, graduations, milestone birthdays, and funerals.</p>
+  <h2>Common questions</h2>
+  <h3>Is this for genealogy research?</h3>
+  <p>No. Roundtable is built for families who already know each other and want to see how everyone connects. There are no historical records to search and no DNA testing — just a shared tree your family builds together.</p>
+  <h3>What kinds of gatherings is this for?</h3>
+  <p>Reunions, holidays, graduations, milestone birthdays, funerals, or even on a regular day. Any time someone wants to share something about their family history from afar, or the family is in one place and nobody can quite explain how everyone is related.</p>
+  <h3>How do relatives get access?</h3>
+  <p>You share one link. Anyone with it can view the tree and add themselves — no separate signups, no invitations to manage, no per-person cost.</p>
+  <h3>What does it cost?</h3>
+  <p>Joining a tree is free. One membership of $19.99 per year keeps the tree editable for every family member, no matter how many people are on it. There are no per-person subscriptions.</p>
+  <h3>What happens if two people add the same relative?</h3>
+  <p>Duplicates get flagged rather than overwritten. Nothing anyone contributes gets silently replaced by someone else's edit.</p>
   <p><a href="https://famroundtable.com/">Open Roundtable to start your family tree →</a></p>
   <p style="margin-top:30px;font-size:13px;color:#82796a;border-top:1px solid #dcd3c4;padding-top:16px">
     <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a><br>© 2026 All Rights Reserved
@@ -1384,6 +1418,15 @@ const App = {
     return {
       isLanding: s.step === "landing",
       isName: s.step === "name", isBoardSetup: s.step === "board", isApp: s.step === "app",
+      faqs: [
+        { q: "Is this for genealogy research?", a: "No. Roundtable is built for families who already know each other and want to see how everyone connects. There are no historical records to search and no DNA testing — just a shared tree your family builds together." },
+        { q: "What kinds of gatherings is this for?", a: "Reunions, holidays, graduations, milestone birthdays, funerals, or even on a regular day. Any time someone wants to share something about their family history from afar, or the family is in one place and nobody can quite explain how everyone is related." },
+        { q: "How do relatives get access?", a: "You share one link. Anyone with it can view the tree and add themselves — no separate signups, no invitations to manage, no per-person cost." },
+        { q: "What does it cost?", a: "Joining a tree is free. One membership of $19.99 per year keeps the tree editable for every family member, no matter how many people are on it. There are no per-person subscriptions." },
+        { q: "What happens if two people add the same relative?", a: "Duplicates get flagged rather than overwritten. Nothing anyone contributes gets silently replaced by someone else's edit." }
+      ],
+      faqOpen: (s.faqOpen == null ? -1 : s.faqOpen),
+      onToggleFaq: i => this.setState(st => ({ faqOpen: st.faqOpen === i ? null : i })),
       beats: [
         { n: "1", c: "#c67139", title: "Say who you are", body: "Your name rides along with everyone you add." },
         { n: "2", c: "#7a8a5e", title: "Add your branch", body: "A name is enough — details whenever you like." },
@@ -1956,13 +1999,17 @@ function consentBanner(V) {
 
 function viewLanding(V) {
   return h("div", { key: "landing", style: "flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; padding:28px 24px 26px; gap:20px", class: "noscroll" },
+    // Top block fills at least one screen, so "Free to start…" is the last thing
+    // visible and the FAQ sits below the fold (a scroll reveals it). The +26px
+    // offsets the container's bottom padding so the FAQ clears the fold cleanly.
+    h("div", { style: "min-height:calc(100% + 26px); flex:none; display:flex; flex-direction:column; gap:20px" },
     h("div", { style: "display:flex; align-items:center; gap:12px" },
       h("div", { style: "width:54px; height:54px; border-radius:999px; background:#c67139; display:flex; align-items:center; justify-content:center; color:#fff2eb; font-family:Caprasimo, serif; font-size:26px" }, "R"),
       h("div", { style: "font-family:Caprasimo, serif; font-size:27px; letter-spacing:-.01em" }, "Roundtable")
     ),
     h("div", { style: "display:flex; flex-direction:column; gap:14px" },
       h("div", { style: "font-family:Caprasimo, serif; font-size:38px; line-height:1.05; text-wrap:pretty" }, "The family tree you build together, and keep adding to."),
-      h("div", { style: "font-size:17px; line-height:1.55; color:#645c50; text-wrap:pretty" }, "Share one board code. Everyone fills in the branch they know best, and the tree keeps growing — new babies, new marriages, years later."),
+      h("div", { style: "font-size:17px; line-height:1.55; color:#645c50; text-wrap:pretty" }, "Share one link. Everyone fills in the branch they know best, and the tree keeps growing — new babies, new marriages, years later."),
       h("div", { style: "font-size:15px; line-height:1.5; color:#82796a; text-wrap:pretty" },
         h("span", { style: "font-weight:700; color:#8c491a" }, "Perfect for "),
         "reunions, holidays, graduations, funerals, milestone birthdays.")
@@ -1971,8 +2018,10 @@ function viewLanding(V) {
       btn({ onClick: V.onStartNow, style: "font-size:19px; font-weight:800; padding:19px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.2)", hover: "background:#b2622d" }, "Create free family tree"),
       btn({ onClick: V.onLandingJoin, style: "font-size:16px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "I have a board code"),
       h("div", { style: "font-size:13px; line-height:1.5; color:#82796a; text-align:center" }, "Free to start. No accounts, no subscriptions.")
-    ),
-    h("div", { style: "display:flex; flex-direction:column; gap:11px" },
+    )
+    ), // end top block — "Free to start" is the last thing above the fold
+    // Just under the fold: the three steps, then the FAQ.
+    h("div", { style: "display:flex; flex-direction:column; gap:10px" },
       V.beats.map((b, i) => h("div", { key: "beat" + i, style: "display:flex; align-items:flex-start; gap:13px; padding:14px 16px; border-radius:20px; background:#ebddc5" },
         h("span", { style: "width:28px; height:28px; flex:none; border-radius:999px; background:" + b.c + "; color:#fff2eb; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, b.n),
         h("span", { style: "display:flex; flex-direction:column; gap:2px" },
@@ -1980,6 +2029,19 @@ function viewLanding(V) {
           h("span", { style: "font-size:14px; line-height:1.45; color:#645c50" }, b.body)
         )
       ))
+    ),
+    h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+      h("div", { style: "font-family:Caprasimo, serif; font-size:22px; line-height:1.1; margin-bottom:2px" }, "Common questions"),
+      V.faqs.map((f, i) => {
+        const open = V.faqOpen === i;
+        return h("div", { key: "faq" + i, style: "border-radius:18px; background:#ebddc5; overflow:hidden" },
+          btn({ onClick: () => V.onToggleFaq(i), "aria-expanded": open ? "true" : "false", style: "width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; padding:14px 16px; border:none; background:transparent; color:#201e1d; font-size:15.5px; font-weight:800; line-height:1.3; cursor:pointer" },
+            h("span", null, f.q),
+            h("span", { style: "flex:none; font-size:13px; color:#8c491a; transition:transform .18s; transform:rotate(" + (open ? "90" : "0") + "deg)" }, "▶")
+          ),
+          open ? h("div", { style: "padding:0 16px 15px; font-size:14px; line-height:1.55; color:#645c50" }, f.a) : null
+        );
+      })
     ),
     // Footer — legal links + copyright.
     h("div", { style: "margin-top:auto; padding-top:18px; display:flex; flex-direction:column; align-items:center; gap:7px; border-top:1px solid #dcd3c4" },
