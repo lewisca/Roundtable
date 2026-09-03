@@ -2010,11 +2010,15 @@ function viewLanding(V) {
     h("div", { style: "display:flex; flex-direction:column; gap:14px" },
       h("div", { style: "font-family:Caprasimo, serif; font-size:38px; line-height:1.05; text-wrap:pretty" }, "The family tree you build together, and keep adding to."),
       h("div", { style: "font-size:17px; line-height:1.55; color:#645c50; text-wrap:pretty" }, "Share one link. Everyone fills in the branch they know best, and the tree keeps growing — new babies, new marriages, years later."),
-      h("div", { style: "font-size:15px; line-height:1.5; color:#82796a; text-wrap:pretty" },
-        h("span", { style: "font-weight:700; color:#8c491a" }, "Perfect for "),
-        "reunions, holidays, graduations, funerals, milestone birthdays.")
+      h("div", { style: "display:flex; flex-direction:column; gap:7px" },
+        h("div", { style: "font-size:15px; font-weight:700; color:#8c491a" }, "Perfect for"),
+        ["Reunions", "Holidays", "Graduations", "Funerals", "Milestone birthdays"].map((x, i) =>
+          h("div", { key: "occ" + i, style: "display:flex; align-items:center; gap:10px; font-size:15px; color:#645c50" },
+            h("span", { style: "width:5px; height:5px; flex:none; border-radius:999px; background:#c67139" }),
+            x))
+      )
     ),
-    h("div", { style: "display:flex; flex-direction:column; gap:11px" },
+    h("div", { style: "display:flex; flex-direction:column; gap:18px" },
       btn({ onClick: V.onStartNow, style: "font-size:19px; font-weight:800; padding:19px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer; box-shadow:0 12px 32px rgba(46,43,37,.2)", hover: "background:#b2622d" }, "Create free family tree"),
       btn({ onClick: V.onLandingJoin, style: "font-size:16px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, "I have a board code"),
       h("div", { style: "font-size:13px; line-height:1.5; color:#82796a; text-align:center" }, "Free to start. No accounts, no subscriptions.")
