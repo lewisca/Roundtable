@@ -184,8 +184,15 @@
     padding-top: max(clamp(20px, 3vw, 46px), env(safe-area-inset-top));
     padding-bottom: max(clamp(20px, 3vw, 46px), env(safe-area-inset-bottom));
   }
-  /* A short screen (a phone held sideways) → give the whole width to the tree */
-  @media (max-height: 500px) { .proj-side { display: none; } }
+  /* A short screen (a phone held sideways) → give the whole width to the tree,
+     and collapse the header to ~2 lines: icon-only actions, no secondary chrome. */
+  @media (max-height: 500px) {
+    .proj-side { display: none; }
+    .proj-head { gap: 10px; align-items: center; }
+    .proj-head .plabel { display: none; }
+    .proj-head .proj-livebadge, .proj-head .proj-people-cap { display: none !important; }
+    .proj-head button { padding: 8px !important; gap: 0 !important; }
+  }
   /* Nudge to landscape on a phone — mirrored to a TV, portrait looks tiny */
   .proj-rotate { display: none; }
   @media (orientation: portrait) and (max-width: 820px) and (pointer: coarse) {
@@ -2448,11 +2455,11 @@ const actBtn = "font-size:12px; font-weight:700; padding:9px 14px; border-radius
 function projection(V) {
   return h("div", { key: "proj", class: "proj" },
     // top bar
-    h("div", { style: "flex:none; display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap" },
+    h("div", { class: "proj-head", style: "flex:none; display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap" },
       h("div", { style: "display:flex; flex-direction:column; gap:4px; min-width:0; flex:1 1 240px" },
         h("div", { style: "display:flex; align-items:center; gap:12px; flex-wrap:wrap" },
           h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(11px,1.1vw,14px); letter-spacing:.16em; text-transform:uppercase; color:#8c491a" }, "Board " + V.room + " · live"),
-          h("div", { style: "display:flex; align-items:center; gap:8px; padding:5px 12px; border-radius:999px; background:#f0fae1; border:1.5px solid #7a8a5e" },
+          h("div", { class: "proj-livebadge", style: "display:flex; align-items:center; gap:8px; padding:5px 12px; border-radius:999px; background:#f0fae1; border:1.5px solid #7a8a5e" },
             h("span", { style: "width:9px; height:9px; border-radius:999px; background:#7a8a5e; display:block" }),
             h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:700; color:#3d472b" }, V.isPaid ? V.liveLink + " · always live" : "updating in real time")
           )
@@ -2462,18 +2469,18 @@ function projection(V) {
       h("div", { style: "text-align:right; flex:none; display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-left:auto" },
         h("div", null,
           h("div", { style: "font-family:Caprasimo, serif; font-size:clamp(22px,3.2vw,38px); color:#c67139; line-height:1" }, String(V.peopleCount)),
-          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(8px,.8vw,11px); letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "people so far")
+          h("div", { class: "proj-people-cap", style: "font-family:'IBM Plex Mono', monospace; font-size:clamp(8px,.8vw,11px); letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "people so far")
         ),
         h("div", { title: "Zoom the tree — smaller fits more branches on screen", style: "flex:none; display:flex; align-items:center; gap:2px; padding:3px; border-radius:999px; background:#ebddc5" },
           btn({ onClick: V.onProjZoomOut, "aria-label": "Zoom out — fit more branches", style: "width:34px; height:34px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:19px; font-weight:700; cursor:pointer; line-height:1" }, "−"),
           h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:12px; color:#645c50; min-width:44px; text-align:center" }, V.projZoomLabel),
           btn({ onClick: V.onProjZoomIn, "aria-label": "Zoom in — enlarge", style: "width:34px; height:34px; border-radius:999px; border:none; background:#f9f4ed; color:#201e1d; font-size:19px; font-weight:700; cursor:pointer; line-height:1" }, "+")),
         btn({ onClick: V.onShowCast, title: "How to put this on a TV or projector", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" },
-          h("span", { style: "font-size:14px" }, "📺"), h("span", null, "Show on a TV")),
+          h("span", { style: "font-size:14px" }, "📺"), h("span", { class: "plabel" }, "Show on a TV")),
         V.canRealFullscreen ? btn({ onClick: V.onToggleFullscreen, title: V.isFullscreen ? "Leave full screen" : "Fill the whole screen", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
-          h("span", { style: "font-size:14px" }, V.isFullscreen ? "⤢" : "⛶"), h("span", null, V.isFullscreen ? "Exit full screen" : "Full screen")) : null,
+          h("span", { style: "font-size:14px" }, V.isFullscreen ? "⤢" : "⛶"), h("span", { class: "plabel" }, V.isFullscreen ? "Exit full screen" : "Full screen")) : null,
         btn({ onClick: V.onExitProjection, title: "Back to editing", style: "flex:none; display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" },
-          h("span", { style: "font-size:14px" }, "↙"), h("span", null, "Exit"))
+          h("span", { style: "font-size:14px" }, "↙"), h("span", { class: "plabel" }, "Exit"))
       )
     ),
     // columns
