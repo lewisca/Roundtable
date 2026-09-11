@@ -707,8 +707,24 @@ const App = {
     if (json === this._lastWriteJSON) return; // board data unchanged (UI-only edit)
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(async () => {
-      this._lastWriteJSON = json;
-      try { await sb.from("boards").upsert({ code: room, data: snap }); } catch (e) {}
+      try {
+        // Merge with the latest remote FIRST, so a stale local copy can't drop
+        // people or edits another device has made since we last synced.
+        let merged = this.boardSnapshot();
+        const { data: cur } = await sb.from("boards").select("data").eq("code", room).maybeSingle();
+        if (this.state.room !== room || this.state.step !== "app") return; // navigated away mid-fetch
+        if (cur && cur.data) merged = this.mergeBoard(this.boardSnapshot(), cur.data);
+        const mergedJson = JSON.stringify(merged);
+        this._lastWriteJSON = mergedJson;
+        await sb.from("boards").upsert({ code: room, data: merged });
+        // Reflect anything the merge pulled in (e.g. people another device added).
+        if (this.state.room === room && this.state.step === "app") {
+          Object.assign(this.state, merged);
+          if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.state.people);
+          try { localStorage.setItem(STORE_PREFIX + room, mergedJson); } catch (e) {}
+          this.render();
+        }
+      } catch (e) {}
     }, 600);
   },
   boardSnapshot() {
@@ -717,7 +733,47 @@ const App = {
     const s = this.state;
     return {
       familyName: s.familyName, people: s.people, feed: s.feed, log: s.log,
-      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed, links: s.links
+      thread: s.thread, fresh: s.fresh, collapsed: s.collapsed, links: s.links,
+      removedIds: s.removedIds || []   // deletion tombstones, so merges don't resurrect removed people
+    };
+  },
+  // Merge two board snapshots so a stale device can NEVER drop people or edits
+  // another device made (the old last-write-wins upsert once wiped whole
+  // branches). Union people & links by id — a person present on either side
+  // survives — with local edits winning a tie; honour deletion tombstones so
+  // real removals still stick; union the activity streams.
+  mergeBoard(mine, theirs) {
+    if (!theirs) return mine;
+    if (!mine) return theirs;
+    const arr = x => Array.isArray(x) ? x : [];
+    const removed = {};
+    arr(mine.removedIds).concat(arr(theirs.removedIds)).forEach(id => { removed[id] = true; });
+    // people: everyone from either side (theirs first, mine overlaid), minus tombstoned ids
+    const byId = {};
+    arr(theirs.people).forEach(p => { if (p && p.id) byId[p.id] = p; });
+    arr(mine.people).forEach(p => { if (p && p.id) byId[p.id] = p; });
+    const people = Object.keys(byId).filter(id => !removed[id]).map(id => byId[id]);
+    // links: union by a|b|type, minus any touching a removed person
+    const links = {};
+    arr(theirs.links).concat(arr(mine.links)).forEach(l => {
+      if (l && !removed[l.a] && !removed[l.b]) links[[l.a, l.b, l.type].join("|")] = l;
+    });
+    // activity streams: union + de-dupe (mine first = newest), capped
+    const uniq = (a, b, key, cap) => {
+      const seen = {}, out = [];
+      arr(a).concat(arr(b)).forEach(x => { const k = key(x); if (!seen[k]) { seen[k] = true; out.push(x); } });
+      return out.slice(0, cap);
+    };
+    return {
+      familyName: (mine.familyName && mine.familyName.trim()) ? mine.familyName : (theirs.familyName || ""),
+      people: people,
+      links: Object.keys(links).map(k => links[k]),
+      removedIds: Object.keys(removed),
+      feed: uniq(mine.feed, theirs.feed, x => x.who + "|" + x.text + "|" + x.t, 60),
+      log: uniq(mine.log, theirs.log, x => (x.who || "") + "|" + (x.verb || "") + "|" + (x.target || "") + "|" + (x.when || "") + "|" + (x.kind || ""), 120),
+      thread: uniq(mine.thread, theirs.thread, x => (x.who || "") + "|" + (x.text || x.body || "") + "|" + (x.when || x.t || ""), 200),
+      fresh: Object.assign({}, theirs.fresh || {}, mine.fresh || {}),
+      collapsed: Object.assign({}, theirs.collapsed || {}, mine.collapsed || {})
     };
   },
   async syncRoom(room, isNew) {
@@ -763,9 +819,13 @@ const App = {
           const json = JSON.stringify(incoming);
           if (json !== this._lastWriteJSON) {   // skip our own change echoing back
             this._lastWriteJSON = json;
-            Object.assign(this.state, incoming);
+            // Merge, not replace: an incoming broadcast must never drop a local
+            // edit this device just made but hasn't saved yet. Its pending save
+            // will write the union back.
+            const merged = this.mergeBoard(this.boardSnapshot(), incoming);
+            Object.assign(this.state, merged);
             if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.state.people);
-            try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(incoming)); } catch (e) {}
+            try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(this.boardSnapshot())); } catch (e) {}
             changed = true;
           }
         }
@@ -1153,6 +1213,7 @@ const App = {
           .filter(p => p.id !== id)
           .map(p => p.parentId === id ? Object.assign({}, p, { parentId: newParent }) : p)),
         links: (s.links || []).filter(l => l.a !== id && l.b !== id),
+        removedIds: (s.removedIds || []).concat([id]),
         sheet: null, deleteId: null, selected: null,
         log: this.logEntry(s, "removed", gone.name, "remove",
           kids ? "kept the " + kids + " " + (kids === 1 ? "child" : "children") + " below, moved up a generation" : null),
@@ -1164,6 +1225,7 @@ const App = {
       this.setState(s => ({
         people: this.resolveFlags(s.people.filter(p => ids.indexOf(p.id) === -1)),
         links: (s.links || []).filter(l => ids.indexOf(l.a) === -1 && ids.indexOf(l.b) === -1),
+        removedIds: (s.removedIds || []).concat(ids),
         sheet: null, deleteId: null, selected: null,
         log: this.logEntry(s, "removed", gone.name, "remove",
           extra ? "and the " + extra + " " + (extra === 1 ? "person" : "people") + " below them" : null),
