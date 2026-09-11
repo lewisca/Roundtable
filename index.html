@@ -1518,7 +1518,7 @@ const App = {
       onNameNext: () => {
         const nm = (s.myName || "").trim();
         if (!nm || !/\p{L}/u.test(nm)) { this.setState({ nameError: "Please enter your name — letters only (this isn't the board code)." }); return; }
-        if (this._deepLinkCode) { const c = this._deepLinkCode; this._deepLinkCode = null; this.enterRoom(c, false); return; }
+        if (this._deepLinkCode) { const c = this._deepLinkCode; this._deepLinkCode = null; this.enterRoom(c, false); track("board_joined", { via: "link" }); return; }
         this.setState({ step: "board", room: s.joining ? s.room : this.newCode(), nameError: null });
       },
       joining: s.joining, notJoining: !s.joining,
@@ -3209,15 +3209,12 @@ function upgradeSheet(V) {
     if (sess && sess.myName) App.state.myName = sess.myName;
     if (sess && sess.contact) App.state.contact = sess.contact;
     if (deepCode) {
-      if (App.state.myName) {
-        App.state.step = "landing";
-        App.enterRoom(deepCode, false);        // known visitor -> straight into the board
-        track("board_joined", { via: "link" });
-      } else {
-        App._deepLinkCode = deepCode;          // ask their name first, then open it
-        App.state.step = "name";
-        App.state.joining = true;
-      }
+      // Always confirm the name first (pre-filled from this device's last visit
+      // if we have one), so every shared-link visitor is attributed to the right
+      // person — even when the link is opened on a shared or borrowed device.
+      App._deepLinkCode = deepCode;
+      App.state.step = "name";
+      App.state.joining = true;
     } else if (sess && sess.step === "app" && sess.room) {
       App.state.step = "landing"; // will enter cleanly below
       App.enterRoom(sess.room, false);
