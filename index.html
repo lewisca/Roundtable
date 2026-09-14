@@ -3237,7 +3237,9 @@ function upgradeSheet(V) {
     App.state.toast = { text: "Payment received — activating your board. It stays live for a year.", i: "✓", c: "#7a8a5e" };
     App.render();
     App.flashToast();
-    track("upgrade_completed", {});
+    // NOTE: the authoritative `upgrade_completed` is sent server-side from the
+    // Stripe webhook (reliable regardless of consent / ad blockers / redirect
+    // loss). Firing it here too would double-count and miss opted-out buyers.
   }
 })();
 </script>

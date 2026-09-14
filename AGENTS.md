@@ -50,7 +50,17 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 | `feedback_sent` | `onSendFeedback` (menu → Report feedback) | — |
 | `upgrade_started` | `onSubscribe` (button click) | — |
 | `Check out started` | `onSubscribe` (redirect to Stripe) | — |
-| `upgrade_completed` | boot, `?paid=1` return | — |
+| `upgrade_completed` ⭐ | **server-side** — `stripe-webhook` on `checkout.session.completed` | `source:server`, `board`, `type:new`, `plan`, `revenue`, `currency` |
+| `upgrade_renewed` | **server-side** — `stripe-webhook` on `invoice.paid` (billing_reason `subscription_cycle`) | `source:server`, `board`, `type:renewal`, `plan`, `revenue`, `currency` |
+| `subscription_cancelled` | **server-side** — `stripe-webhook` on `customer.subscription.deleted` | `source:server`, `board`, `plan` |
+
+> **Sales are tracked server-side.** Purchase/renewal events come from the Stripe
+> webhook (authoritative), not the browser — client-side tracking missed sales when
+> the buyer declined analytics consent, ran an ad blocker, or lost the post-checkout
+> redirect. `distinct_id` is the board code; `$insert_id` is the Stripe event id (dedupes
+> webhook retries). The webhook uses the public Mixpanel project token (optional
+> `MIXPANEL_TOKEN` secret overrides it). `upgrade_started` / `Check out started` stay
+> client-side (consent-gated funnel intent).
 
 ### Governance TODO (Mixpanel dashboard)
 - Add Lexicon descriptions for each event above.

@@ -24,6 +24,43 @@ const admin = createClient(
 
 const inAYear = () => new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
 
+// Server-side analytics. Client-side purchase tracking is unreliable (analytics
+// consent is opt-out by default, ad blockers block the Mixpanel script, and the
+// post-checkout redirect can be lost), so the authoritative "a sale happened"
+// event is sent from here. The Mixpanel PROJECT TOKEN is public (it already ships
+// in the client), so it's safe to use in this function.
+const MIXPANEL_TOKEN = Deno.env.get("MIXPANEL_TOKEN") ?? "d913ed494b93028d5727ddb5f8bf970f";
+// deno-lint-ignore no-explicit-any
+async function mpTrack(event: string, distinctId: string, insertId: string, props: Record<string, any>) {
+  try {
+    const payload = [{
+      event,
+      properties: {
+        token: MIXPANEL_TOKEN,
+        distinct_id: distinctId || "server",
+        $insert_id: insertId,                 // idempotency: Stripe retries webhooks
+        time: Math.floor(Date.now() / 1000),
+        source: "server",
+        ...props,
+      },
+    }];
+    const body = "data=" + encodeURIComponent(btoa(JSON.stringify(payload)));
+    await fetch("https://api.mixpanel.com/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+  } catch (_e) { /* analytics must never break the webhook */ }
+}
+
+// Look up a board's code from its Stripe subscription id (for renewal/cancel events).
+async function codeForSub(subId: string): Promise<string> {
+  try {
+    const { data } = await admin.from("boards").select("code").eq("stripe_subscription_id", subId).maybeSingle();
+    return (data?.code as string) || subId;
+  } catch (_e) { return subId; }
+}
+
 // The top-level `invoice.subscription` field was removed in API 2025-03-31.basil+
 // (we're on 2026-02-25.preview). Read it from wherever this version puts it.
 // deno-lint-ignore no-explicit-any
@@ -61,6 +98,14 @@ Deno.serve(async (req) => {
             stripe_customer_id: typeof s.customer === "string" ? s.customer : s.customer?.id ?? null,
             stripe_subscription_id: typeof s.subscription === "string" ? s.subscription : s.subscription?.id ?? null,
           }).eq("code", code);
+          // Authoritative sale event (fires regardless of the buyer's consent choice).
+          await mpTrack("upgrade_completed", code, event.id, {
+            board: code,
+            type: "new",
+            plan: "annual",
+            revenue: (s.amount_total ?? 0) / 100,
+            currency: (s.currency ?? "usd"),
+          });
         }
         break;
       }
@@ -73,6 +118,18 @@ Deno.serve(async (req) => {
           await admin.from("boards").update({
             is_paid: true, paid_until: inAYear(), expires_at: inAYear(),
           }).eq("stripe_subscription_id", subId);
+          // Only count actual renewals here — the first invoice is the initial
+          // sale, already counted by checkout.session.completed above.
+          if (inv.billing_reason === "subscription_cycle") {
+            const code = await codeForSub(subId);
+            await mpTrack("upgrade_renewed", code, event.id, {
+              board: code,
+              type: "renewal",
+              plan: "annual",
+              revenue: (inv.amount_paid ?? 0) / 100,
+              currency: (inv.currency ?? "usd"),
+            });
+          }
         }
         break;
       }
@@ -82,6 +139,8 @@ Deno.serve(async (req) => {
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         await admin.from("boards").update({ is_paid: false }).eq("stripe_subscription_id", sub.id);
+        const code = await codeForSub(sub.id);
+        await mpTrack("subscription_cancelled", code, event.id, { board: code, plan: "annual" });
         break;
       }
     }
