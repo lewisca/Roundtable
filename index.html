@@ -731,19 +731,34 @@ const App = {
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(async () => {
       try {
-        // Merge with the latest remote FIRST, so a stale local copy can't drop
-        // people or edits another device has made since we last synced.
-        let merged = this.boardSnapshot();
+        const mineSnap = this.boardSnapshot();
+        const mineJson = JSON.stringify(mineSnap);
+        // Fast path — you're the only one editing: your copy is already current
+        // (adopted on entry, kept live by realtime), so just write it. No fetch,
+        // no merge, no extra re-render. This is the common case and keeps saving
+        // snappy. The costly fetch-merge-adopt below runs only when others are on
+        // the board at the same time — the only situation a blind overwrite could
+        // drop someone else's work.
+        if ((this.state.hereCount || 1) <= 1) {
+          this._lastWriteJSON = mineJson;
+          await sb.from("boards").upsert({ code: room, data: mineSnap });
+          return;
+        }
+        // Concurrent editors: merge with the latest remote first so a stale local
+        // copy can't drop people or edits another device made since we synced.
+        let merged = mineSnap;
         const { data: cur } = await sb.from("boards").select("data").eq("code", room).maybeSingle();
         if (this.state.room !== room || this.state.step !== "app") return; // navigated away mid-fetch
         if (cur && cur.data) merged = this.mergeBoard(this.boardSnapshot(), cur.data);
         const mergedJson = JSON.stringify(merged);
         this._lastWriteJSON = mergedJson;
         await sb.from("boards").upsert({ code: room, data: merged });
-        // Reflect anything the merge pulled in (e.g. people another device added).
-        if (this.state.room === room && this.state.step === "app") {
+        // Only adopt + re-render when the merge actually pulled in remote changes
+        // (otherwise re-rendering identical state is just wasted jank).
+        if (mergedJson !== mineJson && this.state.room === room && this.state.step === "app") {
           Object.assign(this.state, merged);
           if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.state.people);
+          this._boardSig = this.boardSig();
           try { localStorage.setItem(STORE_PREFIX + room, mergedJson); } catch (e) {}
           this.render();
         }
