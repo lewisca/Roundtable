@@ -531,6 +531,7 @@ const App = {
   _remoteReady: false,
   _lastWriteJSON: null,
   _deepLinkCode: null,
+  _boardSig: null,
 
   setState(update, cb) {
     const patchObj = typeof update === "function" ? update(this.state) : update;
@@ -669,13 +670,35 @@ const App = {
   persist() {
     const s = this.state;
     if (s.step !== "app") { try { localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, myName: s.myName, contact: s.contact })); } catch (e) {} return; }
+    // The session pointer is tiny — always keep it fresh.
+    try { localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName, contact: s.contact })); } catch (e) {}
+    // Skip the expensive board write when nothing in the tree actually changed.
+    // Every keystroke in an edit field, every sheet open, every selection fires
+    // setState → persist; without this guard each one re-serialized the whole
+    // board (photos and all) twice and wrote it to localStorage, which sputters.
+    const sig = this.boardSig();
+    if (sig === this._boardSig) return;
+    this._boardSig = sig;
     const snap = this.boardSnapshot();
     try {
       localStorage.setItem(STORE_PREFIX + s.room, JSON.stringify(snap));
-      localStorage.setItem("roundtable:session", JSON.stringify({ step: s.step, room: s.room, myName: s.myName, contact: s.contact }));
       this.rememberBoard(s.room, s.familyName);
     } catch (e) {}
     this.saveRemote(s.room, snap);
+  },
+  // A cheap change-signature of the board: serializes everything EXCEPT photo
+  // bytes (a photo contributes only its length), so it's fast to compute every
+  // keystroke yet still changes whenever any real edit does — including a photo
+  // being added, replaced or removed.
+  boardSig() {
+    const s = this.state;
+    const light = {
+      familyName: s.familyName,
+      people: (s.people || []).map(p => Object.assign({}, p, { photo: p.photo ? p.photo.length : 0 })),
+      links: s.links, removedIds: s.removedIds,
+      feed: s.feed, log: s.log, thread: s.thread, fresh: s.fresh, collapsed: s.collapsed
+    };
+    try { return JSON.stringify(light); } catch (e) { return Math.random().toString(); }
   },
   // Boards this browser has opened, so they can be re-entered without the code
   // (localStorage — this device only). Newest first, capped at 8, demo excluded.
