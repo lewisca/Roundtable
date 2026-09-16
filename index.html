@@ -2095,10 +2095,12 @@ function consentBanner(V) {
   return h("div", { key: "consent", style: "position:fixed; left:0; right:0; bottom:0; z-index:200; display:flex; justify-content:center; padding:14px; pointer-events:none" },
     h("div", { style: "pointer-events:auto; width:100%; max-width:560px; background:#201e1d; color:#f5ead8; border-radius:22px; box-shadow:0 12px 32px rgba(46,43,37,.4); padding:16px 18px; display:flex; flex-direction:column; gap:12px; animation:riseIn .3s ease" },
       h("div", { style: "font-size:13px; line-height:1.5" },
-        "Roundtable uses privacy-friendly analytics (Mixpanel) to see which features help families — no accounts, names, or personal info are collected. Okay to turn it on?"),
+        "We use cookies and similar technologies to measure which features help families and to give you a better experience — no ads, and we never sell your data. By choosing Allow All you agree to this, as set out in our ",
+        h("a", { href: "privacy.html", style: "color:#f0a56b; font-weight:700; text-decoration:underline" }, "Privacy Policy"),
+        "."),
       h("div", { style: "display:flex; gap:10px; align-items:center" },
-        btn({ onClick: V.onDeclineConsent, style: "flex:none; font-size:13px; font-weight:700; padding:11px 18px; border-radius:999px; border:1.5px solid #55504a; background:transparent; color:#e6ddcc; cursor:pointer", hover: "border-color:#82796a" }, "No thanks"),
-        btn({ onClick: V.onAcceptConsent, style: "flex:1; font-size:14px; font-weight:800; padding:12px 18px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Accept")
+        btn({ onClick: V.onDeclineConsent, style: "flex:none; font-size:13px; font-weight:700; padding:11px 18px; border-radius:999px; border:1.5px solid #55504a; background:transparent; color:#e6ddcc; cursor:pointer", hover: "border-color:#82796a" }, "Reject"),
+        btn({ onClick: V.onAcceptConsent, style: "flex:1; font-size:14px; font-weight:800; padding:12px 18px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Allow All")
       )
     )
   );
