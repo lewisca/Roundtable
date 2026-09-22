@@ -962,6 +962,9 @@ const App = {
   kidsOf(id) { return this.state.people.filter(p => p.parentId === id); },
   below(id) { return this.kidsOf(id).reduce((t, k) => t + 1 + this.below(k.id), 0); },
   depthOf(p) { let d = 0, cur = p; const by = id => this.state.people.find(x => x.id === id); while (cur && cur.parentId) { cur = by(cur.parentId); d++; if (d > 12) break; } return d; },
+  // Generation depth of a person within an arbitrary people array (byId map),
+  // used by duplicate detection during a save when state may not match yet.
+  depthInList(byId, p) { let d = 0, cur = p, seen = {}; while (cur && cur.parentId && byId[cur.parentId] && !seen[cur.id]) { seen[cur.id] = true; cur = byId[cur.parentId]; d++; if (d > 40) break; } return d; },
   newCode() {
     const a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let out = "";
@@ -1205,16 +1208,20 @@ const App = {
     this.setState(st => {
       let people, toastText, dupFound = null;
       if (st.editIsNew) {
-        const dup = st.people.find(p => p.name.toLowerCase() === name.toLowerCase());
-        dupFound = dup || null;
         const newId = "p" + Date.now();
         const person = Object.assign({ id: newId, parentId: st.editParent || null, addedBy: st.myName || "You" }, fields);
-        if (dup) { person.flag = true; }
-        people = st.people.map(p => (dup && p.id === dup.id) ? Object.assign({}, p, { flag: true }) : p).concat([person]);
+        people = st.people.concat([person]);
         // Inserting a parent: re-home the selected node(s) — and their subtrees — under the new person.
         const kidIds = Array.isArray(st.editParentOf) ? st.editParentOf : (st.editParentOf ? [st.editParentOf] : []);
+        if (kidIds.length) people = people.map(p => kidIds.indexOf(p.id) > -1 ? Object.assign({}, p, { parentId: newId }) : p);
+        // A duplicate is same name AND same generation. Someone named after an
+        // ancestor (same name, different generation) is NOT flagged.
+        const byId = {}; people.forEach(p => byId[p.id] = p);
+        const newDepth = this.depthInList(byId, byId[newId]);
+        const dup = people.find(p => p.id !== newId && p.name.toLowerCase() === name.toLowerCase() && this.depthInList(byId, p) === newDepth);
+        dupFound = dup || null;
+        if (dup) people = people.map(p => (p.id === newId || p.id === dup.id) ? Object.assign({}, p, { flag: true }) : p);
         if (kidIds.length) {
-          people = people.map(p => kidIds.indexOf(p.id) > -1 ? Object.assign({}, p, { parentId: newId }) : p);
           const first = (st.people.find(p => p.id === kidIds[0]) || {}).name;
           const who = kidIds.length === 1 ? ((first || "them").split(" ")[0]) : (kidIds.length + " people");
           toastText = dup ? name + " added above " + who + " — flagged next to " + dup.name : name + " added as " + who + (kidIds.length === 1 ? "'s parent" : "' parent");
@@ -1285,11 +1292,22 @@ const App = {
     this.kidsOf(id).forEach(k => { out.push(k.id); this.descendants(k.id, out); });
     return out;
   },
-  // A duplicate flag needs a pair. Once fewer than two flagged remain, clear it.
+  // A duplicate flag only means something while two flagged people share the same
+  // name AND the same generation. Clear a flag once no other flagged person
+  // matches on both — covering differentiation ("Jr."), rename, removal, and
+  // "named after an ancestor" (same name, different generation → not a dup).
   resolveFlags(people) {
-    return people.filter(p => p.flag).length < 2
-      ? people.map(p => p.flag ? Object.assign({}, p, { flag: false }) : p)
-      : people;
+    const norm = n => (n || "").trim().toLowerCase();
+    const byId = {}; people.forEach(p => byId[p.id] = p);
+    const key = p => norm(p.name) + "@" + this.depthInList(byId, p);
+    const count = {};
+    people.forEach(p => { if (p.flag) { const k = key(p); count[k] = (count[k] || 0) + 1; } });
+    let changed = false;
+    const out = people.map(p => {
+      if (p.flag && (count[key(p)] || 0) < 2) { changed = true; return Object.assign({}, p, { flag: false }); }
+      return p;
+    });
+    return changed ? out : people;
   },
   // Relationship links between two top-level people (spouse / sibling).
   linksOf(id) {
