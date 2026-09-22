@@ -488,7 +488,7 @@ const App = {
     zoom: 1,
     projection: false, immersive: false, castHelp: false, lightbox: null, toolsOpen: false, projZoom: 1,
     wide: false,
-    hereCount: 1,
+    hereCount: 1, hereNames: [],
     query: "",
     genView: "all",
     viewMode: "list",
@@ -851,7 +851,7 @@ const App = {
     if (!sb) return;
     this.unsubscribeRoom();
     if (!this._clientId) this._clientId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : "c" + Math.random().toString(36).slice(2) + Date.now();
-    this.state.hereCount = 1;
+    this.state.hereCount = 1; this.state.hereNames = [this.state.myName || "You"];
     const self = this;
     this._chan = sb.channel("board:" + room, { config: { presence: { key: this._clientId } } })
       .on("postgres_changes", { event: "*", schema: "public", table: "boards", filter: "code=eq." + room }, payload => {
@@ -881,9 +881,19 @@ const App = {
       // Live presence: count everyone currently connected to this board.
       .on("presence", { event: "sync" }, () => {
         try {
-          const n = Object.keys(self._chan.presenceState()).length || 1;
-          if (self.state.hereCount !== n) {
+          // Count PEOPLE, not connections: dedupe by name so the same person on
+          // two browsers/tabs is one, and list who's here.
+          const st = self._chan.presenceState();
+          const seen = {}, names = [];
+          Object.keys(st).forEach(k => (st[k] || []).forEach(m => {
+            const nm = (m && m.name ? String(m.name) : "").trim();
+            const key = nm.toLowerCase();
+            if (nm && !seen[key]) { seen[key] = true; names.push(nm); }
+          }));
+          const n = names.length || 1;
+          if (self.state.hereCount !== n || (self.state.hereNames || []).join("|") !== names.join("|")) {
             self.state.hereCount = n;
+            self.state.hereNames = names;
             if (self.state.step === "app" && self.state.room === room) self.render();
           }
         } catch (e) {}
@@ -1662,6 +1672,14 @@ const App = {
       genFilters: genFilters,
       gensCount: gens,
       hereLabel: (s.room === DEMO_ROOM ? "5 here" : (s.hereCount + " here")),
+      // Who's here, deduped by name (same person on two browsers = once).
+      hereWho: (function () {
+        const names = (s.room === DEMO_ROOM) ? ["Rita", "Danny", "Javi", "Tío Tomás", "Luz"] : (s.hereNames || []);
+        if (!names.length) return null;
+        const show = names.slice(0, 4);
+        const extra = names.length - show.length;
+        return show.join(", ") + (extra > 0 ? " +" + extra + " more" : "");
+      })(),
       wide: s.wide,
       isProjection: s.projection,
       isFullscreen: this.isFullscreen(),
@@ -2393,7 +2411,7 @@ function appSidebar(V) {
     h("div", { style: "padding:20px; border-radius:24px; background:#ffe1d0; text-align:center" },
       h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#8c491a" }, "Board code"),
       h("div", { style: "font-family:Caprasimo, serif; font-size:34px; letter-spacing:.14em; color:#8c491a; margin-top:4px" }, V.room),
-      h("div", { style: "font-size:12px; line-height:1.45; color:#645c50; margin-top:8px" }, V.hereLabel + " · anyone with the code can add")
+      h("div", { style: "font-size:12px; line-height:1.45; color:#645c50; margin-top:8px" }, V.hereLabel + (V.hereWho ? " · " + V.hereWho : "") + " · anyone with the code can add")
     ),
     h("div", { style: "display:flex; gap:8px" },
       btn({ onClick: V.onOpenShare, style: "flex:1; font-size:13px; font-weight:700; padding:12px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Share code"),
@@ -2992,15 +3010,19 @@ function menuSheet(V) {
   const item = "display:flex; align-items:center; gap:12px; width:100%; text-align:left; font-size:15px; font-weight:700; padding:14px 16px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#201e1d; cursor:pointer";
   return h("div", { key: "sheet-menu", style: SHEET + "; max-height:82%; gap:12px", class: "noscroll" },
     GRAB,
-    h("div", { style: "padding:15px 16px; border-radius:22px; background:#ffe1d0; display:flex; align-items:center; justify-content:space-between; gap:10px" },
-      h("div", { style: "display:flex; flex-direction:column; gap:2px; min-width:0" },
-        h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#8c491a" }, "Board " + V.room),
-        h("div", { style: "font-size:12px; color:#645c50" }, V.countLine)
+    h("div", { style: "padding:15px 16px; border-radius:22px; background:#ffe1d0; display:flex; flex-direction:column; gap:8px" },
+      h("div", { style: "display:flex; align-items:center; justify-content:space-between; gap:10px" },
+        h("div", { style: "display:flex; flex-direction:column; gap:2px; min-width:0" },
+          h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#8c491a" }, "Board " + V.room),
+          h("div", { style: "font-size:12px; color:#645c50" }, V.countLine)
+        ),
+        h("div", { style: "display:flex; align-items:center; gap:7px; flex:none" },
+          h("span", { style: "width:8px; height:8px; border-radius:999px; background:#7a8a5e; display:block" }),
+          h("span", { style: "font-size:13px; font-weight:800; color:#56633f; white-space:nowrap" }, V.hereLabel)
+        )
       ),
-      h("div", { style: "display:flex; align-items:center; gap:7px; flex:none" },
-        h("span", { style: "width:8px; height:8px; border-radius:999px; background:#7a8a5e; display:block" }),
-        h("span", { style: "font-size:13px; font-weight:800; color:#56633f; white-space:nowrap" }, V.hereLabel)
-      )
+      V.hereWho ? h("div", { style: "font-size:12px; line-height:1.4; color:#8c491a; border-top:1px solid #f3b892; padding-top:7px" },
+        h("span", { style: "font-weight:800" }, "Here now: "), V.hereWho) : null
     ),
     V.isPaid ? h("div", { style: "padding:11px 14px; border-radius:16px; background:#f0fae1; border:1.5px solid #ccdbb2; display:flex; align-items:center; gap:8px" },
       h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live"),
