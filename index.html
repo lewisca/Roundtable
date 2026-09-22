@@ -661,13 +661,14 @@ const App = {
   },
   // Live preview of the downloadable tree, injected into #dl-host on the sheet.
   syncDownloadPreview() {
-    if (this.state.sheet !== "download" || this.state.step !== "app") return;
+    if ((this.state.sheet !== "download" && this.state.sheet !== "customdl") || this.state.step !== "app") return;
     const host = document.getElementById("dl-host");
     if (!host) return;
-    const sig = this.state.people.map(p => p.id + ":" + (p.parentId || "")).join(",") + "|" + this.state.familyName + "|" + this.state.room;
+    const festive = this.state.sheet === "customdl" ? { holiday: this.state.dlHoliday || "Christmas", tagline: this.state.dlTagline || "" } : null;
+    const sig = this.state.people.map(p => p.id + ":" + (p.parentId || "")).join(",") + "|" + this.state.familyName + "|" + this.state.room + "|" + (festive ? festive.holiday + "|" + festive.tagline : "");
     if (host._sig === sig) return;
     host._sig = sig;
-    host.innerHTML = this.treeChartSVG().svg;
+    host.innerHTML = this.treeChartSVG({ festive: festive }).svg;
     const svg = host.querySelector("svg");
     if (svg) { svg.removeAttribute("width"); svg.removeAttribute("height"); svg.style.width = "100%"; svg.style.height = "100%"; svg.style.display = "block"; }
   },
@@ -1696,6 +1697,7 @@ const App = {
       isEditSheet: s.sheet === "edit", isDeleteSheet: s.sheet === "delete",
       isBoardSheet: s.sheet === "board", isShareSheet: s.sheet === "share",
       isDownloadSheet: s.sheet === "download", isUpgradeSheet: s.sheet === "upgrade",
+      isCustomDlSheet: s.sheet === "customdl",
       isMenuSheet: s.sheet === "menu", isShareMenuSheet: s.sheet === "sharemenu", isAssistantSheet: s.sheet === "assistant", isFeedbackSheet: s.sheet === "feedback",
       isRadial: s.viewMode === "radial",
       isRows: s.viewMode === "rows",
@@ -1747,6 +1749,25 @@ const App = {
       onOpenUpgrade: () => this.setState({ sheet: "upgrade", payError: null }),
       onDownloadPdf: () => { this.downloadTree("pdf", total); track("tree_downloaded", { format: "pdf" }); },
       onDownloadImage: () => { this.downloadImage(total); track("tree_downloaded", { format: "image" }); },
+      // Festive (paid-only) download: a holiday + a short tagline in the header.
+      onOpenCustomDl: () => this.setState({ sheet: "customdl", dlHoliday: this.state.dlHoliday || "Christmas" }),
+      // Paid unlocks the full, inclusive set of 20 (major faith & cultural
+      // celebrations plus universal family milestones); the free preview shows a
+      // simple, still-diverse teaser of 6 so the upgrade unlocks the rest.
+      holidays: s.subscribed
+        ? ["Christmas", "New Year", "Thanksgiving", "Easter", "Hanukkah", "Passover",
+           "Eid", "Diwali", "Holi", "Lunar New Year", "Mid-Autumn Festival", "Nowruz",
+           "Vaisakhi", "Kwanzaa", "Juneteenth", "Día de los Muertos",
+           "Reunion", "Wedding", "Anniversary", "Graduation"]
+        : ["Christmas", "Hanukkah", "Eid", "Diwali", "Lunar New Year", "Reunion"],
+      dlHoliday: s.dlHoliday || "Christmas",
+      dlTagline: s.dlTagline || "",
+      dlTaglineWords: (s.dlTagline || "").trim() ? (s.dlTagline || "").trim().split(/\s+/).length : 0,
+      onPickHoliday: (h) => () => this.setState({ dlHoliday: h }),
+      onDlTagline: e => { const v = e.target.value; const w = v.trim().split(/\s+/).filter(Boolean); this.setState({ dlTagline: w.length > 10 ? w.slice(0, 10).join(" ") : v }); },
+      festiveHeader: (s.familyName || "Our Family") + " " + (s.dlHoliday || "Christmas") + " " + new Date().getFullYear(),
+      onFestivePdf: () => { this.downloadTree("pdf", total, { holiday: this.state.dlHoliday || "Christmas", tagline: this.state.dlTagline || "" }); track("tree_downloaded", { format: "pdf", custom: true }); },
+      onFestiveImage: () => { this.downloadImage(total, { holiday: this.state.dlHoliday || "Christmas", tagline: this.state.dlTagline || "" }); track("tree_downloaded", { format: "image", custom: true }); },
       expiryDate: s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(7),
       daysLeft: s.expiresAt ? Math.max(0, Math.ceil((new Date(s.expiresAt).getTime() - Date.now()) / 86400000)) : 7,
       renewDate: s.paidUntil ? this.fmtDate(s.paidUntil) : (s.expiresAt ? this.fmtDate(s.expiresAt) : this.plusDays(365)),
@@ -1893,7 +1914,8 @@ const App = {
     const clip = (str, n) => { str = String(str || ""); return str.length > n ? str.slice(0, n - 1) + "…" : str; };
     const link = "https://famroundtable.com/?board=" + s.room;
     const people = s.people.filter(p => !p.placeholder && (p.name || "").trim());
-    const NW = 156, NH = 56, HG = 26, VG = 54, PAD = 48, HEADER = 100, FOOTER = showFooter ? 150 : 36;
+    const festive = (opts.festive && opts.festive.holiday) ? opts.festive : null;
+    const NW = 156, NH = 56, HG = 26, VG = 54, PAD = 48, HEADER = festive ? 152 : 100, FOOTER = showFooter ? 150 : 36;
 
     if (!people.length) {
       const W = 560, H = 320;
@@ -1922,15 +1944,23 @@ const App = {
     const topY = id => pos[id].depth * (NH + VG);
     const treeW = Math.max(1, cursor) * colW - HG;
     const treeH = (maxDepth + 1) * NH + maxDepth * VG;
-    const contentW = Math.max(treeW, 560);
+    const contentW = Math.max(treeW, festive ? 720 : 560);
     const W = contentW + PAD * 2;
     const H = HEADER + treeH + FOOTER + PAD * 2;
     const offX = PAD + (contentW - treeW) / 2;
     const offY = PAD + HEADER;
 
     let b = `<rect x="0" y="0" width="${W}" height="${H}" fill="#f5ead8"/>`;
-    b += `<text x="${W / 2}" y="${PAD + 46}" text-anchor="middle" font-family="Georgia,serif" font-weight="bold" font-size="42" fill="#201e1d">${esc(s.familyName || "Our Family")}</text>`;
-    b += `<text x="${W / 2}" y="${PAD + 76}" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" letter-spacing="2" fill="#8c491a">BOARD ${esc(s.room)} · ${esc(people.length)} PEOPLE</text>`;
+    if (festive) {
+      // Custom festive header: "<Family> <Holiday> <Year>" + a centered tagline.
+      const title = (s.familyName || "Our Family") + " " + festive.holiday + " " + new Date().getFullYear();
+      b += `<text x="${W / 2}" y="${PAD + 52}" text-anchor="middle" font-family="Georgia,serif" font-weight="bold" font-size="40" fill="#201e1d">${esc(clip(title, 46))}</text>`;
+      const tag = (festive.tagline || "").trim();
+      if (tag) b += `<text x="${W / 2}" y="${PAD + 92}" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-size="20" fill="#8c491a">${esc(clip(tag, 96))}</text>`;
+    } else {
+      b += `<text x="${W / 2}" y="${PAD + 46}" text-anchor="middle" font-family="Georgia,serif" font-weight="bold" font-size="42" fill="#201e1d">${esc(s.familyName || "Our Family")}</text>`;
+      b += `<text x="${W / 2}" y="${PAD + 76}" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" letter-spacing="2" fill="#8c491a">BOARD ${esc(s.room)} · ${esc(people.length)} PEOPLE</text>`;
+    }
     // connectors (parent → children), coloured by the parent's generation
     people.forEach(p => {
       const ch = kids[p.id] || [];
@@ -1967,14 +1997,14 @@ const App = {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${b}</svg>`;
     return { svg: svg, w: W, h: H, link: link, room: s.room };
   },
-  downloadTree(kind, total) {
+  downloadTree(kind, total, festive) {
     // Self-contained printable page: the tree chart as inline SVG, scaled to fit
     // one page, with the join link clickable when viewed and printed for keeps.
     const s = this.state;
     const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     // No footer inside the SVG — we render the join link as real HTML below it so
     // it stays a genuine, clickable link in the exported PDF (and the saved page).
-    const c = this.treeChartSVG({ noFooter: true });
+    const c = this.treeChartSVG({ noFooter: true, festive: festive || null });
     const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(s.familyName || "Family")} — Roundtable</title>
       <style>html,body{margin:0;height:100%;background:#f5ead8;font-family:Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       .page{box-sizing:border-box;width:100%;height:100%;padding:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
@@ -2011,9 +2041,9 @@ const App = {
 
   // Renders the traditional tree chart to a real PNG (native SVG → canvas).
   // Falls back to the printable page if the browser can't export the canvas.
-  downloadImage(total) {
+  downloadImage(total, festive) {
     const s = this.state;
-    const chart = this.treeChartSVG();
+    const chart = this.treeChartSVG({ festive: festive || null });
     const fname = ((s.familyName || "family").replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/^-+|-+$/g, "") || "family") + "-tree.png";
     const url = URL.createObjectURL(new Blob([chart.svg], { type: "image/svg+xml;charset=utf-8" }));
     const finish = () => this.setState(st => ({
@@ -2033,7 +2063,7 @@ const App = {
         ctx.drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
         canvas.toBlob(async blob => {
-          if (!blob) { this.downloadTree("image", total); return; }
+          if (!blob) { this.downloadTree("image", total, festive); return; }
           // On phones/tablets, hand the PNG to the OS share sheet — that's the only
           // way a web page can reach the photo library ("Save Image" on iOS saves to
           // Photos; a plain download would land in Files). Desktop just downloads.
@@ -2062,9 +2092,9 @@ const App = {
           setTimeout(() => URL.revokeObjectURL(purl), 60000);
           finish();
         }, "image/png");
-      } catch (e) { URL.revokeObjectURL(url); this.downloadTree("image", total); }
+      } catch (e) { URL.revokeObjectURL(url); this.downloadTree("image", total, festive); }
     };
-    img.onerror = () => { URL.revokeObjectURL(url); this.downloadTree("image", total); };
+    img.onerror = () => { URL.revokeObjectURL(url); this.downloadTree("image", total, festive); };
     img.src = url;
   }
 };
@@ -2718,6 +2748,7 @@ function sheets(V) {
   else if (V.isShareSheet) n = shareSheet(V);
   else if (V.isLogSheet) n = logSheet(V);
   else if (V.isDownloadSheet) n = downloadSheet(V);
+  else if (V.isCustomDlSheet) n = customDlSheet(V);
   else if (V.isUpgradeSheet) n = upgradeSheet(V);
   if (n) n.props.class = ("sheet " + (n.props.class || "")).trim();
   return n;
@@ -2975,6 +3006,12 @@ function shareMenuSheet(V) {
       h("span", { style: "font-size:18px" }, "⇩"), h("span", { style: "flex:1" }, "Download"),
       h("span", { style: "font-size:12px; font-weight:600; color:#82796a" }, "PDF or image")
     ),
+    btn({ onClick: V.onOpenCustomDl, style: item, hover: "border-color:#c67139" },
+      h("span", { style: "font-size:18px" }, "✨"), h("span", { style: "flex:1" }, "Festive download"),
+      V.isPaid
+        ? h("span", { style: "font-size:12px; font-weight:600; color:#82796a" }, "holiday + tagline")
+        : h("span", { style: "font-size:11px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:4px 9px; border-radius:999px" }, "Preview")
+    ),
     btn({ onClick: V.onCloseSheet, style: "font-size:15px; font-weight:700; padding:15px; border-radius:999px; border:1.5px solid #dcd3c4; background:transparent; color:#201e1d; cursor:pointer" }, "Close")
   );
 }
@@ -3157,7 +3194,7 @@ function downloadSheet(V) {
       ),
       closeX(V.onCloseSheet)
     ),
-    h("div", { key: "dlhost", id: "dl-host", raw: true, style: "height:200px; border-radius:20px; border:1.5px solid #dcd3c4; background:#fffaf3; padding:10px; overflow:hidden; display:flex; align-items:center; justify-content:center" }),
+    h("div", { key: "dlhost", id: "dl-host", raw: true, style: "flex:none; height:200px; border-radius:20px; border:1.5px solid #dcd3c4; background:#fffaf3; padding:10px; overflow:hidden; display:flex; align-items:center; justify-content:center" }),
     V.bigTree ? h("div", { style: "padding:13px 15px; border-radius:18px; background:#fff2eb; border:1.5px solid #f6a06b; font-size:12.5px; line-height:1.5; color:#8c491a" },
       h("span", { style: "font-weight:800" }, "📐 This is a big tree. "),
       "It still fits one page, but the names get small at letter size. It's vector, so it stays crisp at any size — for a fully readable copy, choose a large paper size (A3/A2 or “poster”) in the print dialog, or view the PDF on screen and zoom in."
@@ -3167,6 +3204,62 @@ function downloadSheet(V) {
       btn({ onClick: V.onDownloadImage, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #c67139; background:transparent; color:#8c491a; cursor:pointer", hover: "background:#fff2eb" }, "Download as image")
     ),
     h("div", { style: "font-size:12px; line-height:1.5; color:#82796a" }, "The whole family as a tree on one page, with a link (and the board code) to reopen it — tappable in the PDF, printed for keeps. Free, and yours to keep.")
+  );
+}
+
+// Paid-only "festive" download: pick a holiday + a short tagline, which appear
+// in the header of the downloaded tree as "<Family> <Holiday> <Year>" and, below
+// it centered, the tagline.
+function customDlSheet(V) {
+  const over = V.dlTaglineWords >= 10;
+  return h("div", { key: "sheet-customdl", style: SHEET + "; max-height:90%; gap:14px", class: "noscroll" },
+    GRAB,
+    h("div", { style: "display:flex; align-items:flex-start; justify-content:space-between; gap:14px" },
+      h("div", { style: "display:flex; flex-direction:column; gap:4px" },
+        h("div", { style: "font-family:Caprasimo, serif; font-size:24px; line-height:1.1" }, "Festive download"),
+        h("div", { style: "font-size:13px; line-height:1.5; color:#645c50" }, "Dress the tree up for an occasion — pick a holiday and add a short tagline. They print at the top of your tree.")
+      ),
+      closeX(V.onCloseSheet)
+    ),
+    // Live preview (reuses the download preview host, rendered with the festive header)
+    h("div", { key: "dlhost", id: "dl-host", raw: true, style: "flex:none; height:200px; border-radius:20px; border:1.5px solid #dcd3c4; background:#fffaf3; padding:10px; overflow:hidden; display:flex; align-items:center; justify-content:center" }),
+    V.isPaid ? null : h("div", { style: "font-size:12px; text-align:center; color:#82796a; margin-top:-4px" }, "A live preview — 6 of 20 occasions. Customise it, then upgrade to download."),
+    // Holiday picker
+    h("div", { style: "display:flex; flex-direction:column; gap:8px" },
+      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Occasion"),
+      h("div", { style: "display:flex; flex-wrap:wrap; gap:8px" },
+        V.holidays.map(hol => {
+          const on = V.dlHoliday === hol;
+          return btn({ key: "hol-" + hol, onClick: V.onPickHoliday(hol), style: "font-size:14px; font-weight:700; padding:9px 15px; border-radius:999px; cursor:pointer; border:1.5px solid " + (on ? "#c67139" : "#dcd3c4") + "; background:" + (on ? "#c67139" : "transparent") + "; color:" + (on ? "#fff2eb" : "#645c50"), hover: on ? "" : "border-color:#c67139; color:#8c491a" }, hol);
+        })
+      )
+    ),
+    // Tagline
+    h("div", { style: "display:flex; flex-direction:column; gap:6px" },
+      h("div", { style: "display:flex; align-items:baseline; justify-content:space-between; gap:10px" },
+        h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Tagline"),
+        h("div", { style: "font-size:12px; font-weight:700; color:" + (over ? "#8c491a" : "#82796a") }, V.dlTaglineWords + "/10 words")
+      ),
+      inp({ value: V.dlTagline, onChange: V.onDlTagline, placeholder: "e.g. Together again, no matter the miles", style: "font-size:15px; padding:14px 18px; border-radius:18px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none; width:100%" })
+    ),
+    // Header preview line
+    h("div", { style: "padding:12px 15px; border-radius:16px; background:#f0fae1; border:1.5px solid #ccdbb2; font-size:13px; line-height:1.5; color:#3d472b" },
+      h("span", { style: "font-weight:800" }, "Header: "), V.festiveHeader,
+      (V.dlTagline && V.dlTagline.trim()) ? h("div", { style: "font-style:italic; color:#5a6b3e; margin-top:2px" }, "“" + V.dlTagline.trim() + "”") : null
+    ),
+    V.isPaid
+      ? h("div", { style: "display:flex; flex-direction:column; gap:9px" },
+          btn({ onClick: V.onFestivePdf, style: "font-size:15px; font-weight:800; padding:16px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Download as PDF"),
+          btn({ onClick: V.onFestiveImage, style: "font-size:15px; font-weight:700; padding:16px; border-radius:999px; border:1.5px solid #c67139; background:transparent; color:#8c491a; cursor:pointer", hover: "background:#fff2eb" }, "Download as image")
+        )
+      // Not upgraded: the preview above is the sell — turn the download into an upgrade CTA.
+      : h("div", { style: "display:flex; flex-direction:column; gap:11px" },
+          h("div", { style: "padding:15px 17px; border-radius:20px; background:#fff2eb; border:1.5px solid #f6a06b; display:flex; flex-direction:column; gap:5px" },
+            h("div", { style: "font-size:15px; font-weight:800; color:#8c491a" }, "🔒 Upgrade to download your festive tree"),
+            h("div", { style: "font-size:13px; line-height:1.5; color:#8c491a" }, "Unlock all 20 occasions and download the festive tree — as a PDF or image, for cards, gifts and the family group chat. Keeps the board editable for everyone too. $19.99/year for the whole family.")
+          ),
+          btn({ onClick: V.onOpenUpgrade, style: "font-size:16px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Upgrade — $19.99/yr")
+        )
   );
 }
 
