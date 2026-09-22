@@ -764,7 +764,7 @@ const App = {
         // (otherwise re-rendering identical state is just wasted jank).
         if (mergedJson !== mineJson && this.state.room === room && this.state.step === "app") {
           Object.assign(this.state, merged);
-          if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.state.people);
+          if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.sanitizeCoParents(this.state.people));
           this._boardSig = this.boardSig();
           try { localStorage.setItem(STORE_PREFIX + room, mergedJson); } catch (e) {}
           this.render();
@@ -833,7 +833,7 @@ const App = {
         this._lastWriteJSON = JSON.stringify(data.data);
         Object.assign(this.state, data.data);
         // Self-heal an orphaned duplicate flag (a lone flag with no pair left).
-        if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.state.people);
+        if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.sanitizeCoParents(this.state.people));
         this.applyBilling(data);   // paid status/expiry from server columns (not the blob)
         try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(data.data)); } catch (e) {}
         this._remoteReady = true;
@@ -869,7 +869,7 @@ const App = {
             // will write the union back.
             const merged = this.mergeBoard(this.boardSnapshot(), incoming);
             Object.assign(this.state, merged);
-            if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.state.people);
+            if (Array.isArray(this.state.people)) this.state.people = this.resolveFlags(this.sanitizeCoParents(this.state.people));
             try { localStorage.setItem(STORE_PREFIX + room, JSON.stringify(this.boardSnapshot())); } catch (e) {}
             changed = true;
           }
@@ -924,7 +924,7 @@ const App = {
     if (data) {
       Object.assign(this.state, {
         room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null,
-        familyName: data.familyName || "", people: this.resolveFlags(data.people || []), feed: data.feed || [],
+        familyName: data.familyName || "", people: this.resolveFlags(this.sanitizeCoParents(data.people || [])), feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
         collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
       });
@@ -949,7 +949,13 @@ const App = {
   presence() { return "avatars"; },
   accent() { return ACCENT; },
   gen(d) { return GEN[d % GEN.length]; },
-  initials(n) { return (n || "").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?"; },
+  // Avatar initials: strip punctuation (parentheses, quotes, nicknames, etc.) so
+  // only real words count, then take the first letter of the first two words —
+  // e.g. Ako (Kambon) -> "AK", not "K(".
+  initials(n) {
+    const letters = (n || "").replace(/[^\p{L}\s]+/gu, " ").split(/\s+/).filter(Boolean).map(w => w[0]);
+    return (letters.slice(0, 2).join("") || "?").toUpperCase();
+  },
   // A person's partners as a list. Back-compatible with the old single `partner`.
   partnersOf(p) { return (p && p.partners) ? p.partners : (p && p.partner && p.partner.name ? [p.partner] : []); },
   years(p) {
@@ -1094,7 +1100,7 @@ const App = {
     this.setState({
       sheet: "edit", editId: id, editIsNew: false, editParentOf: null, addKind: null,
       draftName: p.placeholder ? "" : p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
-      draftNote: p.note || "", draftPartners: partners, draftCoParent: p.coParent || "",
+      draftNote: p.note || "", draftPartners: partners, draftCoParent: this.cleanCoParent(p.coParent),
       draftMore: !!(partners.length || p.born || p.died || p.place || p.note),
       draftPhoto: p.photo || ""
     });
@@ -1201,7 +1207,7 @@ const App = {
     const fields = {
       name, born: s.draftBorn, died: s.draftDied, place: s.draftPlace, note: s.draftNote,
       partners: partners, partner: null,               // partner[] is authoritative; clear legacy single
-      coParent: s.draftCoParent ? s.draftCoParent : null,
+      coParent: this.cleanCoParent(s.draftCoParent) || null,
       photo: s.draftPhoto || null
     };
     this.pushUndo();
@@ -1308,6 +1314,25 @@ const App = {
       return p;
     });
     return changed ? out : people;
+  },
+  // The "other parent" is either a real name or nothing — never a placeholder.
+  // Older builds stored the "Not specified" label as a value; treat that (and
+  // other empty/sentinel values) as no co-parent so it doesn't print on cards.
+  cleanCoParent(v) {
+    const t = (v == null ? "" : String(v)).trim();
+    if (!t) return "";
+    return /^(not specified|unspecified|not sure|none|n\/?a|[-–—])$/i.test(t) ? "" : t;
+  },
+  sanitizeCoParents(people) {
+    let changed = false;
+    const out = (people || []).map(p => {
+      if (p.coParent == null) return p;
+      const c = this.cleanCoParent(p.coParent);
+      if (c === (p.coParent || "")) return p;
+      changed = true;
+      return Object.assign({}, p, { coParent: c || null });
+    });
+    return changed ? out : (people || []);
   },
   // Relationship links between two top-level people (spouse / sibling).
   linksOf(id) {
