@@ -98,7 +98,11 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
+  /* Lock the page itself — the app is a fixed full-screen shell and all
+     scrolling happens inside inner panes. This stops the mobile address bar
+     from collapsing on scroll (which shifted the toolbar) and kills rubber-band
+     overscroll that dragged the header around. */
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   /* Crawlable landing content. Visible in the initial HTML (so crawlers and
      visible-text extractors read it at full weight — NOT display:none, which
      Google discounts). An inline script hides it the instant the app boots, so
@@ -122,12 +126,13 @@
   input, button, textarea { font-family: inherit; }
   @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
   .noscroll::-webkit-scrollbar { display: none; }
-  .noscroll { scrollbar-width: none; }
+  .noscroll { scrollbar-width: none; overscroll-behavior: contain; }
 
   /* Full-bleed cream page; the app sits in a centered readable column.
      Same cream on the page and the column, so there's no frame or card edge —
      it reads as one full-width site. Edge-to-edge on phones. */
   #stage {
+    min-height: 100vh;          /* fallback for browsers without dvh */
     min-height: 100dvh;
     display: flex;
     justify-content: center;
@@ -137,6 +142,7 @@
     position: relative;
     width: 100%;
     max-width: 640px;
+    height: 100vh;              /* fallback for browsers without dvh */
     height: 100dvh;
     background: #f5ead8;
     overflow: hidden;
