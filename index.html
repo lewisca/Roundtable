@@ -1348,6 +1348,22 @@ const App = {
 
   flatten(forBig, expandAll) {
     const s = this.state, q = s.query.trim().toLowerCase();
+    // Precompute children + descendant counts ONCE per render. Previously each
+    // visible card called this.below() (a full subtree re-walk) and this.kidsOf()
+    // (an O(n) filter) — so expanding a big branch went roughly O(n^2) and
+    // sputtered. These maps make the whole build O(n).
+    const rk = "__root";
+    const childrenBy = {};
+    s.people.forEach(p => { const k = (p.parentId == null) ? rk : p.parentId; (childrenBy[k] = childrenBy[k] || []).push(p); });
+    const kidsL = id => childrenBy[(id == null) ? rk : id] || [];
+    const byIdMap = {}; s.people.forEach(p => byIdMap[p.id] = p);
+    const belowMemo = {};
+    const belowCount = id => {
+      if (belowMemo[id] != null) return belowMemo[id];
+      belowMemo[id] = 0; // guard against a cyclic parentId
+      let t = 0; kidsL(id).forEach(k => { t += 1 + belowCount(k.id); });
+      return (belowMemo[id] = t);
+    };
     const ind = forBig ? 42 : 21;
     // Indent per generation, but taper deep levels so long names keep a usable
     // width on a narrow phone. Connectors are derived from these offsets, so
@@ -1360,13 +1376,13 @@ const App = {
     const genView = (!forBig && typeof s.genView === "number") ? s.genView : null;
     const matches = p => !q || [p.name, p.place, p.note, this.partnersOf(p).map(pp => pp.name).join(" "), p.coParent, p.born, p.addedBy].filter(Boolean).join(" ").toLowerCase().indexOf(q) > -1;
     const walk = (parentId, depth) => {
-      const list = this.kidsOf(parentId);
-      const parentP = parentId ? s.people.find(x => x.id === parentId) : null;
+      const list = kidsL(parentId);
+      const parentP = parentId ? byIdMap[parentId] : null;
       const parentName = parentP ? parentP.name : null;
       list.forEach((p, i) => {
         const g = this.gen(depth);
         const collapsed = !expandAll && !!s.collapsed[p.id] && !q;
-        const kids = this.kidsOf(p.id);
+        const kids = kidsL(p.id);
         const isFresh = !!s.fresh[p.id];
         const detail = [p.place, p.note].filter(Boolean).join(" · ");
         const flat = genView !== null;   // one-generation view is a flat list, no connectors
@@ -1395,7 +1411,7 @@ const App = {
             borderColor: s.selected === p.id ? g.color : (isFresh ? this.accent() : (matches(p) && q ? g.color : "#dcd3c4")),
             borderW: s.selected === p.id ? 3 : (isFresh || (q && matches(p)) ? 2 : 1),
             dim: q && !matches(p) ? 0.32 : 1,
-            hasKids: !flat && kids.length > 0, below: this.below(p.id),
+            hasKids: !flat && kids.length > 0, below: belowCount(p.id),
             chevron: collapsed ? "▸" : "▾",
             canEdit: !this.frozen(),
             selected: s.selected === p.id,
