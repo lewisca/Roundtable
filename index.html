@@ -489,6 +489,7 @@ const App = {
     projection: false, immersive: false, castHelp: false, lightbox: null, toolsOpen: false, projZoom: 1,
     wide: false,
     hereCount: 1, hereNames: [],
+    relateMode: false, relateSel: [], relateShow: false,
     query: "",
     genView: "all",
     viewMode: "list",
@@ -556,7 +557,7 @@ const App = {
       patch(this._root, this._vnode, next, 0);
     }
     this._vnode = next;
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { this.syncGenArrows(); this.syncRadial(); this.syncDownloadPreview(); });
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { this.syncGenArrows(); this.syncRadial(); this.syncDownloadPreview(); this.syncRelateDiagram(); });
   },
   // Show the generation-filter scroll arrows only when the row overflows.
   syncGenArrows() {
@@ -671,6 +672,61 @@ const App = {
     host.innerHTML = this.treeChartSVG({ festive: festive }).svg;
     const svg = host.querySelector("svg");
     if (svg) { svg.removeAttribute("width"); svg.removeAttribute("height"); svg.style.width = "100%"; svg.style.height = "100%"; svg.style.display = "block"; }
+  },
+  // Wishbone diagram on the relationship page: shared ancestor at the top forks
+  // down to the two split siblings, then each leg cascades to the two people.
+  syncRelateDiagram() {
+    if (!this.state.relateShow || this.state.step !== "app") return;
+    const host = document.getElementById("relate-host");
+    if (!host) return;
+    const sig = this.state.relateSel.join("|");
+    if (host._sig === sig) return;
+    host._sig = sig;
+    const info = this.relationship(this.state.relateSel[0], this.state.relateSel[1]);
+    host.innerHTML = info ? this.relateDiagramSVG(info) : "";
+  },
+  relateDiagramSVG(info) {
+    if (info.unrelated) return "";
+    const esc = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    const clip = (s, n) => { s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+    const nm = id => clip((info.byId[id] && info.byId[id].name) || "someone", 16);
+    const RH = 40, W = 380;
+    const node = (x, y, color, filled, anchor, label, bold) => {
+      const tx = anchor === "end" ? x - 13 : x + 13;
+      return '<circle cx="' + x + '" cy="' + y + '" r="' + (filled ? 6 : 5) + '" fill="' + (filled ? color : "#fffaf3") + '" stroke="' + color + '" stroke-width="2"/>' +
+        '<text x="' + tx + '" y="' + (y + 4.5) + '" text-anchor="' + anchor + '" font-family="Figtree,system-ui,sans-serif" font-size="13" ' + (bold ? 'font-weight="700" fill="#201e1d"' : 'fill="#46413a"') + '>' + esc(label) + '</text>';
+    };
+
+    if (info.direct) {
+      const gens = Math.max(info.dA, info.dB);
+      const line = (info.dA === 0 ? info.lineB : info.lineA).slice(0, gens + 1).reverse(); // ancestor→descendant
+      const x = 70, H = line.length * RH + 20; let b = "";
+      b += '<line x1="' + x + '" y1="26" x2="' + x + '" y2="' + (26 + (line.length - 1) * RH) + '" stroke="#c67139" stroke-width="2"/>';
+      line.forEach((id, i) => { const end = id === info.idA || id === info.idB; b += node(x, 26 + i * RH, "#c67139", i === 0 || end, "start", nm(id), end); });
+      return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">' + b + '</svg>';
+    }
+
+    // diverging — the wishbone
+    const leftIds = info.lineA.slice(0, info.dA).reverse();   // splitA … A
+    const rightIds = info.lineB.slice(0, info.dB).reverse();  // splitB … B
+    const cx = W / 2, cxL = cx - 46, cxR = cx + 46, LC = "#c67139", RC = "#7a8a5e";
+    const ay = 22, y0 = ay + 34;                              // ancestor y, first-sibling y
+    const rows = Math.max(leftIds.length, rightIds.length);
+    const H = y0 + (rows - 1) * RH + 22;
+    let b = "";
+    // wishbone fork from the shared ancestor down to each split sibling
+    b += '<path d="M' + cx + ' ' + (ay + 6) + ' C ' + cx + ' ' + ((ay + y0) / 2) + ' ' + cxL + ' ' + ((ay + y0) / 2) + ' ' + cxL + ' ' + y0 + '" fill="none" stroke="' + LC + '" stroke-width="2.5"/>';
+    b += '<path d="M' + cx + ' ' + (ay + 6) + ' C ' + cx + ' ' + ((ay + y0) / 2) + ' ' + cxR + ' ' + ((ay + y0) / 2) + ' ' + cxR + ' ' + y0 + '" fill="none" stroke="' + RC + '" stroke-width="2.5"/>';
+    // vertical legs
+    b += '<line x1="' + cxL + '" y1="' + y0 + '" x2="' + cxL + '" y2="' + (y0 + (leftIds.length - 1) * RH) + '" stroke="' + LC + '" stroke-width="2"/>';
+    b += '<line x1="' + cxR + '" y1="' + y0 + '" x2="' + cxR + '" y2="' + (y0 + (rightIds.length - 1) * RH) + '" stroke="' + RC + '" stroke-width="2"/>';
+    // shared ancestor
+    b += '<circle cx="' + cx + '" cy="' + ay + '" r="6" fill="#201e1d"/>';
+    b += '<text x="' + cx + '" y="' + (ay - 10) + '" text-anchor="middle" font-family="Caprasimo,serif" font-size="15" fill="#201e1d">' + esc(nm(info.lca)) + '</text>';
+    // nodes with labels fanning outward
+    leftIds.forEach((id, i) => { const end = id === info.idA || id === info.idB; b += node(cxL, y0 + i * RH, LC, end, "end", nm(id), end); });
+    rightIds.forEach((id, i) => { const end = id === info.idA || id === info.idB; b += node(cxR, y0 + i * RH, RC, end, "start", nm(id), end); });
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">' + b + '</svg>';
   },
 
   /* ---- persistence -------------------------------------------------- */
@@ -963,6 +1019,100 @@ const App = {
   presence() { return "avatars"; },
   accent() { return ACCENT; },
   gen(d) { return GEN[d % GEN.length]; },
+
+  /* ---- relationship finder (the wishbone) --------------------------- */
+  ordinalWord(n) { return ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth"][n] || (n + "th"); },
+  timesRemoved(n) { return n === 1 ? "once removed" : n === 2 ? "twice removed" : n === 3 ? "three times removed" : n + " times removed"; },
+  poss(name) { return name === "You" ? "Your" : name + "’s"; },
+  beVerb(name) { return name === "You" ? "are" : "is"; },
+  gensAgo(n) { return n + " generation" + (n > 1 ? "s" : "") + " ago"; },
+  // n generations UP: 1 parent, 2 grandparent, 3 great-grandparent, 4 = 2× great-…
+  ancestorTerm(n) {
+    if (n <= 0) return "self";
+    if (n === 1) return "parent";
+    if (n === 2) return "grandparent";
+    const greats = n - 2;
+    return (greats === 1 ? "great-grandparent" : greats + "× great-grandparent");
+  },
+  descendantTerm(n) {
+    if (n <= 0) return "self";
+    if (n === 1) return "child";
+    if (n === 2) return "grandchild";
+    const greats = n - 2;
+    return (greats === 1 ? "great-grandchild" : greats + "× great-grandchild");
+  },
+  // The relationship between two people by walking each one's parent chain to
+  // their lowest common ancestor. Returns a descriptor the result page renders.
+  relationship(idA, idB) {
+    const s = this.state, byId = {};
+    s.people.forEach(p => byId[p.id] = p);
+    const nm = id => (byId[id] && (byId[id].name || "").trim()) || "Someone";
+    if (!byId[idA] || !byId[idB] || idA === idB) return null;
+    const anc = id => { const out = []; let cur = byId[id], seen = {}; while (cur && !seen[cur.id]) { out.push(cur.id); seen[cur.id] = true; cur = cur.parentId ? byId[cur.parentId] : null; } return out; };
+    const A = anc(idA), B = anc(idB), bIdx = {};
+    B.forEach((id, i) => { if (bIdx[id] == null) bIdx[id] = i; });
+    let lca = null, dA = -1, dB = -1;
+    for (let i = 0; i < A.length; i++) { if (bIdx[A[i]] != null) { lca = A[i]; dA = i; dB = bIdx[A[i]]; break; } }
+    const nameA = nm(idA), nameB = nm(idB);
+    const base = { idA: idA, idB: idB, nameA: nameA, nameB: nameB, title: nameA + " & " + nameB, byId: byId, lineA: A, lineB: B };
+    if (lca == null) return Object.assign(base, { unrelated: true, headline: "Not connected yet", plain: nameA + " and " + nameB + " aren’t linked on the tree — they may be in-laws, or on branches that haven’t been joined at the top yet.", tags: ["No shared ancestor"] });
+
+    // one is a direct ancestor of the other
+    if (dA === 0 || dB === 0) {
+      const gens = Math.max(dA, dB);
+      const ancestorName = dA === 0 ? nameA : nameB, descName = dA === 0 ? nameB : nameA;
+      return Object.assign(base, {
+        lca: lca, dA: dA, dB: dB, direct: true,
+        headline: ancestorName + " " + this.beVerb(ancestorName) + " " + this.poss(descName) + " " + this.ancestorTerm(gens),
+        plain: descName + " " + this.beVerb(descName) + " " + this.poss(ancestorName) + " " + this.descendantTerm(gens) + " — a direct line, " + gens + " generation" + (gens > 1 ? "s" : "") + " down.",
+        genLine: gens + " generation" + (gens > 1 ? "s" : "") + " apart",
+        tags: ["Direct line", gens + " generation" + (gens > 1 ? "s" : "") + " apart"],
+        sameGen: false
+      });
+    }
+
+    // diverging lines — siblings, aunt/uncle, or cousins
+    const splitA = A[dA - 1], splitB = B[dB - 1], deg = Math.min(dA, dB) - 1, removed = Math.abs(dA - dB);
+    let formal, plain;
+    if (deg === 0 && removed === 0) {
+      formal = "siblings";
+      plain = nameA + " and " + nameB + " are siblings — both children of " + nm(lca) + ".";
+    } else if (deg === 0) {
+      const g = removed, elder = dA < dB ? nameA : nameB, younger = dA < dB ? nameB : nameA;
+      const term = g === 1 ? "aunt/uncle" : g === 2 ? "great-aunt/uncle" : (g - 1) + "× great-aunt/uncle";
+      formal = term + " & " + (g === 1 ? "niece/nephew" : g === 2 ? "great-niece/nephew" : (g - 1) + "× great-niece/nephew");
+      plain = elder + " is " + younger + "’s " + term + ".";
+    } else {
+      formal = this.ordinalWord(deg) + " cousins" + (removed ? ", " + this.timesRemoved(removed) : "");
+      // Plain words: just how they share the connection — the cousin degree lives
+      // in the "Formal" tag, so don't repeat it here.
+      plain = (dA === dB)
+        ? nameA + " and " + this.poss(nameB) + " " + this.ancestorTerm(dA - 1) + "s, " + nm(splitA) + " and " + nm(splitB) + ", were siblings."
+        : this.poss(nameA) + " " + this.ancestorTerm(dA - 1) + " " + nm(splitA) + " and " + this.poss(nameB) + " " + this.ancestorTerm(dB - 1) + " " + nm(splitB) + " were siblings.";
+    }
+    return Object.assign(base, {
+      lca: lca, dA: dA, dB: dB, split: [splitA, splitB], splitAncestor: nm(lca),
+      headline: "Their lines split at " + nm(splitA) + " & " + nm(splitB),
+      genLine: dA === dB ? (dA + " generations back") : (dA + " generations back for " + nameA + ", " + dB + " for " + nameB),
+      plain: plain,
+      tags: ["Split " + this.gensAgo(Math.min(dA, dB)), dA === dB ? "Same generation" : (Math.abs(dA - dB) + " generation" + (Math.abs(dA - dB) > 1 ? "s" : "") + " apart"), "Formal: " + formal],
+      sameGen: dA === dB, formal: formal
+    });
+  },
+  toggleRelate() {
+    if (this.state.relateMode) this.setState({ relateMode: false, relateSel: [], relateShow: false });
+    else this.setState({ relateMode: true, relateSel: [], relateShow: false, sheet: null, selected: null });
+  },
+  relatePick(id) {
+    if (this.state.relateShow) return;
+    let sel = this.state.relateSel.slice();
+    const i = sel.indexOf(id);
+    if (i > -1) { sel.splice(i, 1); this.setState({ relateSel: sel }); return; }
+    if (sel.length >= 2) sel = [];
+    sel.push(id);
+    this.setState({ relateSel: sel, relateShow: sel.length === 2 });
+    if (sel.length === 2) track("relationship_viewed");
+  },
   // Avatar initials: strip punctuation (parentheses, quotes, nicknames, etc.) so
   // only real words count, then take the first letter of the first two words —
   // e.g. Ako (Kambon) -> "AK", not "K(".
@@ -1434,6 +1584,7 @@ const App = {
             detail: detail,
             partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
             coParent: p.coParent || null,
+            relateMode: s.relateMode && !p.placeholder, relateChecked: s.relateSel.indexOf(p.id) > -1, onRelate: () => this.relatePick(p.id),
             childOf: (flat && parentName) ? parentName : null,   // shown only in the generation view
             links: this.linksOf(p.id).map(l => Object.assign({}, l, {
               onJump: () => {
@@ -1548,6 +1699,7 @@ const App = {
             childOf: (only !== null && p.parentId) ? ((s.people.find(x => x.id === p.parentId) || {}).name || null) : null,
             partners: this.partnersOf(p).map(pp => pp.name).filter(Boolean),
             coParent: p.coParent || null,
+            relateMode: s.relateMode && !p.placeholder, relateChecked: s.relateSel.indexOf(p.id) > -1, onRelate: () => this.relatePick(p.id),
             offspring: this.below(p.id),
             byLine: p.placeholder ? "tap to fill in" : "added by " + (p.addedBy || "someone"),
             byColor: p.placeholder ? "#c67139" : "#c0b6a5",
@@ -1805,6 +1957,12 @@ const App = {
       legend2: legend2,
       onOpenMenu: () => this.setState({ sheet: "menu" }),
       onOpenShareMenu: () => this.setState({ sheet: "sharemenu" }),
+      // Relationship finder (wishbone)
+      relateMode: s.relateMode, relateShow: s.relateShow, relateCount: s.relateSel.length,
+      relateInfo: (s.relateShow && s.relateSel.length === 2) ? this.relationship(s.relateSel[0], s.relateSel[1]) : null,
+      relateFirstName: s.relateSel.length === 1 ? ((s.people.find(p => p.id === s.relateSel[0]) || {}).name || "") : "",
+      onToggleRelate: () => this.toggleRelate(),
+      onRelateBack: () => this.setState({ relateShow: false, relateSel: [] }),
       onOpenBoard: () => this.setState({ sheet: "board" }),
       onOpenShare: () => { this.setState({ sheet: "share" }); track("share"); },
       onOpenAssistant: () => this.setState({ sheet: "assistant", assistantResult: "", assistantError: null }),
@@ -2355,11 +2513,13 @@ function viewApp(V) {
   return h("div", { key: "app", style: "flex:1; display:flex; flex-direction:column; min-height:0; position:relative" },
     appHeader(V),
     frozenBanner(V),
+    relateBanner(V),
     V.isRadial ? appRadial(V) : V.isRows ? rowsView(V) : appTree(V),
     appToast(V),
     appScrim(V),
     sheets(V),
-    photoLightbox(V)
+    photoLightbox(V),
+    relateResult(V)
   );
 }
 
@@ -2374,19 +2534,60 @@ function frozenBanner(V) {
   );
 }
 
+// Wishbone relationship finder — prompt bar while picking two people.
+function relateBanner(V) {
+  if (!V.relateMode || V.relateShow) return null;
+  const msg = V.relateCount >= 1
+    ? "Selected " + V.relateFirstName + " — now pick one more."
+    : "Select two people to see how they’re related.";
+  return h("div", { key: "relbar", style: "flex:none; display:flex; align-items:center; gap:10px; padding:11px 16px; background:#fff2eb; border-bottom:1.5px solid #f6a06b" },
+    h("span", { style: "flex:1; font-size:13px; font-weight:700; line-height:1.4; color:#8c491a" }, msg),
+    btn({ onClick: V.onToggleRelate, style: "flex:none; font-size:12px; font-weight:700; padding:7px 13px; border-radius:999px; border:1.5px solid #f6a06b; background:transparent; color:#8c491a; cursor:pointer" }, "Cancel")
+  );
+}
+
+// The "How you're connected" result page (full overlay with a back button).
+function relateResult(V) {
+  if (!V.relateShow || !V.relateInfo) return null;
+  const info = V.relateInfo;
+  // The wishbone diagram is an SVG injected into this raw host by syncRelateDiagram().
+  const diagram = info.unrelated ? null
+    : h("div", { key: "relhost", id: "relate-host", raw: true, style: "padding:16px 12px; border-radius:20px; background:#fffaf3; border:1.5px solid #dcd3c4" });
+
+  return h("div", { key: "relresult", class: "noscroll", style: "position:absolute; inset:0; z-index:120; background:#f5ead8; overflow-y:auto; display:flex; flex-direction:column; gap:14px; padding:calc(12px + env(safe-area-inset-top)) 20px 30px" },
+    h("div", { style: "display:flex; align-items:center; gap:10px" },
+      btn({ onClick: V.onRelateBack, title: "Back to picking", style: "flex:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; padding:8px 14px 8px 11px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer", hover: "border-color:#c67139; color:#8c491a" }, h("span", { style: "font-size:15px" }, "←"), h("span", null, "Back")),
+      h("div", { style: "flex:1; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#82796a; text-align:right" }, "How you’re connected")
+    ),
+    h("div", { style: "font-family:Caprasimo, serif; font-size:26px; line-height:1.12; color:#201e1d" }, info.headline),
+    info.genLine ? h("div", { style: "font-size:13px; color:#645c50" }, info.genLine) : null,
+    diagram,
+    h("div", { style: "padding:14px 16px; border-radius:18px; background:#f0fae1; border:1.5px solid #ccdbb2" },
+      h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#56633f; margin-bottom:4px" }, "In plain words"),
+      h("div", { style: "font-size:14.5px; line-height:1.5; color:#3d472b" }, info.plain)
+    ),
+    h("div", { style: "display:flex; flex-wrap:wrap; gap:7px" },
+      (info.tags || []).map((t, i) => h("span", { key: "tg" + i, style: "font-size:12px; font-weight:700; padding:6px 12px; border-radius:999px; background:#ebddc5; color:#645c50" }, t))
+    ),
+    btn({ onClick: V.onRelateBack, style: "margin-top:2px; font-size:15px; font-weight:800; padding:15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Compare two others")
+  );
+}
+
 // Desktop: a readable working column (toolbar + tree) plus a context sidebar.
 function appDesktop(V) {
   return h("div", { key: "app", style: "flex:1; min-height:0; display:flex; position:relative" },
     h("div", { style: "flex:1; min-width:0; max-width:680px; display:flex; flex-direction:column; min-height:0" },
       appHeader(V, true),
       frozenBanner(V),
+      relateBanner(V),
       V.isRadial ? appRadial(V) : V.isRows ? rowsView(V) : appTree(V)
     ),
     appSidebar(V),
     appToast(V),
     appScrim(V),
     sheets(V),
-    photoLightbox(V)
+    photoLightbox(V),
+    relateResult(V)
   );
 }
 
@@ -2485,7 +2686,7 @@ function appHeader(V, wide) {
         // Paid boards: the live link is in the menu, so this slot becomes a
         // wishbone button (Branches/Rows only, not radial). Decorative for now.
         V.isPaid
-          ? (V.isRadial ? null : btn({ onClick: () => {}, title: "Wishbone", "aria-label": "Wishbone", style: iconBtn + " width:36px; height:36px; border:none; background:#c67139;", hover: "background:#b2622d" }, h("img", { src: wishbone, alt: "", style: "width:19px; height:19px; display:block" })))
+          ? (V.isRadial ? null : btn({ onClick: V.onToggleRelate, title: "See how two people are related", "aria-label": "Relationship finder", style: iconBtn + " width:36px; height:36px; border:none; background:" + (V.relateMode ? "#8c491a" : "#c67139") + ";", hover: "background:#b2622d" }, h("img", { src: wishbone, alt: "", style: "width:19px; height:19px; display:block" })))
           : btn({ onClick: V.onOpenUpgrade, style: "flex:none; font-size:13px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
       )
     ),
@@ -2554,9 +2755,9 @@ function rowsView(V) {
 }
 
 function rowsPerson(p, g) {
-  return h("div", { key: p.id, id: "node-" + p.id, style: "display:flex; align-items:stretch; border-radius:20px; border:1.5px solid " + (p.placeholder ? "#e6c8a8" : "#dcd3c4") + "; background:#f9f4ed; overflow:hidden; box-shadow:0 1px 2px rgba(46,43,37,.10)" },
+  return h("div", { key: p.id, id: "node-" + p.id, style: "display:flex; align-items:stretch; border-radius:20px; border:" + (p.relateChecked ? "2px solid #c67139" : "1.5px solid " + (p.placeholder ? "#e6c8a8" : "#dcd3c4")) + "; background:" + (p.relateChecked ? "#fff2eb" : "#f9f4ed") + "; overflow:hidden; box-shadow:0 1px 2px rgba(46,43,37,.10)" },
     h("div", { style: "width:7px; flex:none; background:" + g.color }),
-    btn({ onClick: p.onOpen, style: "flex:1; min-width:0; text-align:left; display:flex; align-items:center; gap:12px; padding:11px 8px 11px 12px; border:none; background:transparent; cursor:pointer" },
+    btn({ onClick: p.relateMode ? p.onRelate : p.onOpen, style: "flex:1; min-width:0; text-align:left; display:flex; align-items:center; gap:12px; padding:11px 8px 11px 12px; border:none; background:transparent; cursor:pointer" },
       h("span", { style: "flex:none; width:20px; font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:700; color:#b3a894" }, p.num),
       p.photo
         ? h("img", { src: p.photo, alt: p.name, onClick: p.onPhoto, title: "Tap to enlarge", style: "flex:none; width:44px; height:44px; border-radius:999px; object-fit:cover; border:2.5px solid " + g.color + "; cursor:zoom-in" })
@@ -2580,7 +2781,10 @@ function rowsPerson(p, g) {
         h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:" + p.byColor }, p.byLine)
       )
     ),
-    p.canEdit ? btn({ onClick: p.onAddChild, title: "Add a child of " + p.name, "aria-label": "Add a child", style: "flex:none; width:50px; border:none; background:transparent; color:" + g.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + g.soft }, "+") : null
+    p.relateMode
+      ? btn({ onClick: p.onRelate, title: "Select for relationship", "aria-label": "Select", style: "flex:none; width:50px; border:none; background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer" },
+          h("span", { style: "width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; color:#fff2eb; border:2px solid " + (p.relateChecked ? "#c67139" : "#c0b6a5") + "; background:" + (p.relateChecked ? "#c67139" : "transparent") }, p.relateChecked ? "✓" : ""))
+      : (p.canEdit ? btn({ onClick: p.onAddChild, title: "Add a child of " + p.name, "aria-label": "Add a child", style: "flex:none; width:50px; border:none; background:transparent; color:" + g.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + g.soft }, "+") : null)
   );
 }
 
@@ -2625,7 +2829,7 @@ function row(r) {
         h("span", { style: "font-size:12px; color:" + r.color }, r.chevron),
         h("span", { style: "font-size:10px; font-weight:800; color:" + r.color }, String(r.below))
       ) : null,
-      btn({ onClick: r.onSelect, style: "flex:1; min-width:0; text-align:left; display:flex; gap:10px; align-items:flex-start; padding:8px 10px 8px 12px; border:none; background:transparent; cursor:pointer" },
+      btn({ onClick: r.relateMode ? r.onRelate : r.onSelect, style: "flex:1; min-width:0; text-align:left; display:flex; gap:10px; align-items:flex-start; padding:8px 10px 8px 12px; border:none; background:transparent; cursor:pointer" },
         r.photo
           ? h("img", { src: r.photo, alt: r.name, onClick: r.onPhoto, title: "Tap to enlarge", style: "flex:none; width:38px; height:38px; border-radius:999px; object-fit:cover; border:2.5px solid " + r.color + "; cursor:zoom-in" })
           : h("span", { style: "flex:none; width:38px; height:38px; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
@@ -2659,7 +2863,10 @@ function row(r) {
           r.flagged ? h("span", { style: "align-self:flex-start; font-size:10px; font-weight:800; color:#8c491a; background:#ffe1d0; padding:3px 9px; border-radius:999px" }, "two entries — tap, then open the chat") : null
         )
       ),
-      r.canEdit ? btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:transparent; color:" + r.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + r.soft }, "+") : null
+      r.relateMode
+        ? btn({ onClick: r.onRelate, title: "Select for relationship", "aria-label": "Select", style: "flex:none; width:50px; border:none; background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer" },
+            h("span", { style: "width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; color:#fff2eb; border:2px solid " + (r.relateChecked ? "#c67139" : "#c0b6a5") + "; background:" + (r.relateChecked ? "#c67139" : "transparent") }, r.relateChecked ? "✓" : ""))
+        : (r.canEdit ? btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:transparent; color:" + r.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + r.soft }, "+") : null)
     );
     const card = [head];
     if (r.selected && r.canEdit) {
@@ -2669,7 +2876,7 @@ function row(r) {
         r.flagged ? btn({ onClick: r.onFlag, style: "font-size:12px; font-weight:800; padding:9px 14px; border-radius:999px; border:none; background:#8c491a; color:#fff2eb; cursor:pointer" }, "Open the chat") : null
       ));
     }
-    inner.push(h("div", { key: "card", style: "border-radius:24px; border:" + r.borderW + "px solid " + r.borderColor + "; background:#f9f4ed; overflow:hidden; box-shadow:0 1px 2px rgba(46,43,37,.14)" }, card));
+    inner.push(h("div", { key: "card", style: "border-radius:24px; border:" + (r.relateChecked ? "2px solid #c67139" : r.borderW + "px solid " + r.borderColor) + "; background:" + (r.relateChecked ? "#fff2eb" : "#f9f4ed") + "; overflow:hidden; box-shadow:0 1px 2px rgba(46,43,37,.14)" }, card));
   } else if (r.isAdd) {
     inner.push(btn({ key: "add", onClick: r.onAdd, style: "width:100%; text-align:left; font-size:13px; font-weight:700; padding:14px 18px; border-radius:24px; border:2px dashed " + r.color + "; background:#f9f4ed; color:" + r.color + "; cursor:pointer" }, r.label));
   }
