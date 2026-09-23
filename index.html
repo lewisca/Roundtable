@@ -993,7 +993,7 @@ const App = {
     const data = this.loadRoom(room);
     if (data) {
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null, relateMode: false, relateSel: [], relateShow: false,
         familyName: data.familyName || "", people: this.resolveFlags(this.sanitizeCoParents(data.people || [])), feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
         collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
@@ -1003,7 +1003,7 @@ const App = {
       // people don't face a blank canvas; joins to an unknown code stay empty.
       const started = { who: this.state.myName || "You", i: this.initials(this.state.myName || "You"), c: "#201e1d", verb: "started", target: "board " + room, kind: "board", when: this.stamp() };
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null, relateMode: false, relateSel: [], relateShow: false,
         familyName: "", people: isNew ? this.templatePeople() : [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, links: [], connectFor: null, subscribed: false
       });
     }
