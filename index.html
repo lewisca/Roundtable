@@ -1851,6 +1851,7 @@ const App = {
       isPaid: s.subscribed, isUnpaid: !s.subscribed,
       isFrozen: this.frozen(), canEdit: !this.frozen(),
       saveButtonLabel: s.subscribed ? "Link" : (this.frozen() ? "Reactivate" : "Save"),
+      ownerEmail: s.ownerEmail || null,
       upgradeTitle: s.subscribed ? "Your tree is live" : "Keep the tree alive",
       upgradeSub: s.subscribed
         ? "Share this link with anyone in the family — it always shows the latest tree."
@@ -2447,6 +2448,9 @@ function appSidebar(V) {
 
 function appHeader(V, wide) {
   const iconBtn = "flex:none; display:flex; align-items:center; justify-content:center; border-radius:999px; cursor:pointer;";
+  // Wishbone mark (no Unicode glyph exists) drawn as an inline SVG data URI — the
+  // keyed vdom can't build real <svg> elements, so it rides in an <img>.
+  const wishbone = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#fff2eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 18C5 11.5 8.3 8.8 12 6.6C15.7 8.8 19 11.5 19 18"/><circle cx="5" cy="18.1" r="1.4" fill="#fff2eb" stroke="none"/><circle cx="19" cy="18.1" r="1.4" fill="#fff2eb" stroke="none"/></svg>');
   const seg = on => "flex:none; font-size:12px; font-weight:700; padding:6px 10px; border-radius:999px; border:none; cursor:pointer; white-space:nowrap; background:" + (on ? "#201e1d" : "transparent") + "; color:" + (on ? "#f5ead8" : "#645c50");
   const miniBtn = "flex:none; font-size:11px; font-weight:700; padding:7px 10px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f9f4ed; color:#645c50; cursor:pointer;";
   return h("div", { style: "flex:none; background:#f9f4ed; border-bottom:1.5px solid #dcd3c4; padding:calc(8px + env(safe-area-inset-top)) 16px 9px; display:flex; flex-direction:column; gap:7px" },
@@ -2474,7 +2478,11 @@ function appHeader(V, wide) {
             h("span", { style: "font-size:9px" }, V.toolsOpen ? "▾" : "▸"),
             h("span", null, activeGen ? activeGen.label : "Filters"));
         })(),
-        btn({ onClick: V.onOpenUpgrade, style: "flex:none; font-size:13px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
+        // Paid boards: the live link is in the menu, so this slot becomes a
+        // wishbone button (Branches/Rows only, not radial). Decorative for now.
+        V.isPaid
+          ? (V.isRadial ? null : btn({ onClick: () => {}, title: "Wishbone", "aria-label": "Wishbone", style: iconBtn + " width:36px; height:36px; border:none; background:#c67139;", hover: "background:#b2622d" }, h("img", { src: wishbone, alt: "", style: "width:19px; height:19px; display:block" })))
+          : btn({ onClick: V.onOpenUpgrade, style: "flex:none; font-size:13px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
       )
     ),
     // Row 3 — revealed by Filters: search + Expand/Collapse on one line, then the
@@ -3024,9 +3032,13 @@ function menuSheet(V) {
       V.hereWho ? h("div", { style: "font-size:12px; line-height:1.4; color:#8c491a; border-top:1px solid #f3b892; padding-top:7px" },
         h("span", { style: "font-weight:800" }, "Here now: "), V.hereWho) : null
     ),
-    V.isPaid ? h("div", { style: "padding:11px 14px; border-radius:16px; background:#f0fae1; border:1.5px solid #ccdbb2; display:flex; align-items:center; gap:8px" },
-      h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live"),
-      h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink + " · renews " + V.renewDate)
+    V.isPaid ? h("div", { style: "padding:11px 14px; border-radius:16px; background:#f0fae1; border:1.5px solid #ccdbb2; display:flex; flex-direction:column; gap:6px" },
+      h("div", { style: "display:flex; align-items:center; gap:8px" },
+        h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live"),
+        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink + " · renews " + V.renewDate)
+      ),
+      V.ownerEmail ? h("div", { style: "font-size:12px; line-height:1.4; color:#56633f; border-top:1px solid #ccdbb2; padding-top:6px" },
+        "Receipt sent to ", h("span", { style: "font-weight:800; overflow-wrap:anywhere" }, V.ownerEmail)) : null
     ) : null,
     /* Assistant — hidden for now (re-enable this button to bring it back)
     btn({ onClick: V.onOpenAssistant, style: item + "; border-color:#c67139; background:#fff2eb", hover: "border-color:#b2622d" },
