@@ -807,6 +807,10 @@ const App = {
     const uniq = (a, b, key, cap) => {
       const seen = {}, out = [];
       arr(a).concat(arr(b)).forEach(x => { const k = key(x); if (!seen[k]) { seen[k] = true; out.push(x); } });
+      // Keep the NEWEST across both sides (by ts), not just "mine first" — else a
+      // busy device at the cap would drop another person's newer entries (this is
+      // how Kennetha's log entries were lost). Stable for entries without a ts.
+      out.sort((p, q) => ((q && q.ts) || 0) - ((p && p.ts) || 0));
       return out.slice(0, cap);
     };
     return {
@@ -814,9 +818,9 @@ const App = {
       people: people,
       links: Object.keys(links).map(k => links[k]),
       removedIds: Object.keys(removed),
-      feed: uniq(mine.feed, theirs.feed, x => x.who + "|" + x.text + "|" + x.t, 60),
-      log: uniq(mine.log, theirs.log, x => (x.who || "") + "|" + (x.verb || "") + "|" + (x.target || "") + "|" + (x.when || "") + "|" + (x.kind || ""), 120),
-      thread: uniq(mine.thread, theirs.thread, x => (x.who || "") + "|" + (x.text || x.body || "") + "|" + (x.when || x.t || ""), 200),
+      feed: uniq(mine.feed, theirs.feed, x => x.who + "|" + x.text + "|" + x.t, 300),
+      log: uniq(mine.log, theirs.log, x => (x.who || "") + "|" + (x.verb || "") + "|" + (x.target || "") + "|" + (x.when || "") + "|" + (x.kind || ""), 1000),
+      thread: uniq(mine.thread, theirs.thread, x => (x.who || "") + "|" + (x.text || x.body || "") + "|" + (x.when || x.t || ""), 500),
       fresh: Object.assign({}, theirs.fresh || {}, mine.fresh || {}),
       collapsed: Object.assign({}, theirs.collapsed || {}, mine.collapsed || {})
     };
@@ -1021,7 +1025,7 @@ const App = {
   logEntry(st, verb, target, kind, detail, who, i, c) {
     return [{
       who: who || (st.myName || "You"), i: i || this.initials(st.myName || "You"), c: c || "#201e1d",
-      verb, target, kind, detail: detail || null, when: this.stamp()
+      verb, target, kind, detail: detail || null, when: this.stamp(), ts: Date.now()
     }].concat(st.log);
   },
   flashToast() { clearTimeout(this._toastTimer); this._toastTimer = setTimeout(() => this.setState({ toast: null }), 4200); },
@@ -1250,7 +1254,7 @@ const App = {
       }
       return {
         people: this.resolveFlags(people), sheet: null, selected: null, editParentOf: null,
-        feed: [{ who: st.myName || "You", i: this.initials(st.myName || "You"), c: "#201e1d", text: (st.editIsNew ? "added " : "edited ") + name, t: this.clock() }].concat(st.feed),
+        feed: [{ who: st.myName || "You", i: this.initials(st.myName || "You"), c: "#201e1d", text: (st.editIsNew ? "added " : "edited ") + name, t: this.clock(), ts: Date.now() }].concat(st.feed),
         log: this.logEntry(st, st.editIsNew ? "added" : "edited", name, st.editIsNew ? "add" : "edit",
           st.editIsNew ? (dupFound ? "flagged as a possible duplicate" : null) : "details changed"),
         toast: { text: toastText, i: this.initials(st.myName || "You"), c: "#201e1d" }
@@ -1760,7 +1764,7 @@ const App = {
       onReply: e => this.setState({ replyText: e.target.value }),
       onSendReply: () => {
         const t = s.replyText.trim(); if (!t) return;
-        this.setState(st => ({ replyText: "", thread: st.thread.concat([{ who: st.myName || "You", i: this.initials(st.myName || "You"), c: "#201e1d", text: t }]) }));
+        this.setState(st => ({ replyText: "", thread: st.thread.concat([{ who: st.myName || "You", i: this.initials(st.myName || "You"), c: "#201e1d", text: t, ts: Date.now() }]) }));
       },
       onKeepBoth: () => {
         const pair = s.people.filter(p => p.flag).slice(0, 2);
@@ -3033,10 +3037,12 @@ function menuSheet(V) {
         h("span", { style: "font-weight:800" }, "Here now: "), V.hereWho) : null
     ),
     V.isPaid ? h("div", { style: "padding:11px 14px; border-radius:16px; background:#f0fae1; border:1.5px solid #ccdbb2; display:flex; flex-direction:column; gap:6px" },
-      h("div", { style: "display:flex; align-items:center; gap:8px" },
-        h("span", { style: "font-size:12px; font-weight:800; color:#56633f" }, "Live"),
-        h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink + " · renews " + V.renewDate)
+      h("div", { style: "display:flex; align-items:center; gap:8px; min-width:0" },
+        h("span", { style: "flex:none; font-size:12px; font-weight:800; color:#56633f" }, "Live"),
+        h("span", { style: "flex:1; min-width:0; font-family:'IBM Plex Mono', monospace; font-size:11px; color:#3d472b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" }, V.liveLink)
       ),
+      h("div", { style: "font-size:12px; line-height:1.4; color:#56633f" },
+        h("span", { style: "font-weight:800" }, "Renews "), V.renewDate),
       V.ownerEmail ? h("div", { style: "font-size:12px; line-height:1.4; color:#56633f; border-top:1px solid #ccdbb2; padding-top:6px" },
         "Receipt sent to ", h("span", { style: "font-weight:800; overflow-wrap:anywhere" }, V.ownerEmail)) : null
     ) : null,
