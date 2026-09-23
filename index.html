@@ -977,7 +977,18 @@ const App = {
     this.state.expiresAt = exp;
     this.state.paidUntil = until;
     this.state.ownerEmail = owner;
+    // Cache the last-known billing for this board (UI only — the server still
+    // gates edits) so a reload shows the right button immediately, no flash.
+    if (this.state.room) { try { localStorage.setItem("roundtable:billing:" + this.state.room, JSON.stringify({ paid: paid, exp: exp, until: until, owner: owner })); } catch (e) {} }
     return changed;
+  },
+  // Optimistically restore the last-known paid status for a board on entry,
+  // before the authoritative server fetch lands (prevents the Save-button flash).
+  rehydrateBilling(room) {
+    try {
+      const b = JSON.parse(localStorage.getItem("roundtable:billing:" + room) || "null");
+      if (b) { this.state.subscribed = !!b.paid; this.state.expiresAt = b.exp || null; this.state.paidUntil = b.until || null; this.state.ownerEmail = b.owner || null; }
+    } catch (e) {}
   },
   unsubscribeRoom() {
     if (sb && this._chan) { try { sb.removeChannel(this._chan); } catch (e) {} }
@@ -1007,6 +1018,7 @@ const App = {
         familyName: "", people: isNew ? this.templatePeople() : [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, links: [], connectFor: null, subscribed: false
       });
     }
+    this.rehydrateBilling(room);   // show the right (paid) button immediately; server fetch confirms
     this.startLive();
     this.unsubscribeRoom();       // drop any previous board's realtime channel
     this._remoteReady = false;   // block remote writes until the real board is loaded
