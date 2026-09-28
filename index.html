@@ -490,6 +490,7 @@ const App = {
     wide: false,
     hereCount: 1, hereNames: [],
     relateMode: false, relateSel: [], relateShow: false,
+    rearrangeMode: false,
     query: "",
     genView: "all",
     viewMode: "list",
@@ -849,11 +850,16 @@ const App = {
     const arr = x => Array.isArray(x) ? x : [];
     const removed = {};
     arr(mine.removedIds).concat(arr(theirs.removedIds)).forEach(id => { removed[id] = true; });
-    // people: everyone from either side (theirs first, mine overlaid), minus tombstoned ids
+    // people: everyone from either side (mine's field values win), minus tombstoned
+    // ids. Order follows MINE first so a manual rearrange the saver just made
+    // sticks through the merge, then any people only on the remote are appended.
     const byId = {};
     arr(theirs.people).forEach(p => { if (p && p.id) byId[p.id] = p; });
     arr(mine.people).forEach(p => { if (p && p.id) byId[p.id] = p; });
-    const people = Object.keys(byId).filter(id => !removed[id]).map(id => byId[id]);
+    const people = [], seenP = {};
+    arr(mine.people).concat(arr(theirs.people)).forEach(p => {
+      if (p && p.id && !seenP[p.id] && !removed[p.id]) { seenP[p.id] = true; people.push(byId[p.id]); }
+    });
     // links: union by a|b|type, minus any touching a removed person
     const links = {};
     arr(theirs.links).concat(arr(mine.links)).forEach(l => {
@@ -1004,7 +1010,7 @@ const App = {
     const data = this.loadRoom(room);
     if (data) {
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null, relateMode: false, relateSel: [], relateShow: false,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null, relateMode: false, relateSel: [], relateShow: false, rearrangeMode: false,
         familyName: data.familyName || "", people: this.resolveFlags(this.sanitizeCoParents(data.people || [])), feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
         collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
@@ -1014,7 +1020,7 @@ const App = {
       // people don't face a blank canvas; joins to an unknown code stay empty.
       const started = { who: this.state.myName || "You", i: this.initials(this.state.myName || "You"), c: "#201e1d", verb: "started", target: "board " + room, kind: "board", when: this.stamp() };
       Object.assign(this.state, {
-        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null, relateMode: false, relateSel: [], relateShow: false,
+        room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null, relateMode: false, relateSel: [], relateShow: false, rearrangeMode: false,
         familyName: "", people: isNew ? this.templatePeople() : [], feed: [], log: [started], thread: [], fresh: {}, collapsed: {}, links: [], connectFor: null, subscribed: false
       });
     }
@@ -1113,7 +1119,7 @@ const App = {
   },
   toggleRelate() {
     if (this.state.relateMode) this.setState({ relateMode: false, relateSel: [], relateShow: false });
-    else this.setState({ relateMode: true, relateSel: [], relateShow: false, sheet: null, selected: null });
+    else this.setState({ relateMode: true, relateSel: [], relateShow: false, rearrangeMode: false, sheet: null, selected: null });
   },
   relatePick(id) {
     if (this.state.relateShow) return;
@@ -1124,6 +1130,78 @@ const App = {
     sel.push(id);
     this.setState({ relateSel: sel, relateShow: sel.length === 2 });
     if (sel.length === 2) track("relationship_viewed");
+  },
+  /* ---- rearrange: drag to reorder siblings under a parent (Branches view) --- */
+  toggleRearrange() {
+    if (this.state.rearrangeMode) this.setState({ rearrangeMode: false });
+    else this.setState({ rearrangeMode: true, relateMode: false, relateSel: [], relateShow: false, selected: null, sheet: null });
+  },
+  startRearrange(id, ev) {
+    if (!this.state.rearrangeMode || this.frozen() || this._drag) return;
+    try { ev.preventDefault(); } catch (e) {}
+    if (!this._dm) { this._dm = this.dragMove.bind(this); this._du = this.dragEnd.bind(this); }
+    const p = this.state.people.find(x => x.id === id); if (!p) return;
+    const parentId = p.parentId || null;
+    const sibs = this.state.people.filter(x => (x.parentId || null) === parentId).map(x => x.id);
+    if (sibs.length < 2) return;   // nothing to reorder
+    const node = document.getElementById("node-" + id); if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const cy = (ev.touches && ev.touches[0]) ? ev.touches[0].clientY : ev.clientY;
+    const clone = node.cloneNode(true);
+    clone.style.cssText = "position:fixed; left:" + rect.left + "px; top:" + rect.top + "px; width:" + rect.width + "px; z-index:2147483000; opacity:.95; pointer-events:none; box-shadow:0 14px 34px rgba(46,43,37,.32); transform:scale(1.02)";
+    document.body.appendChild(clone);
+    node.style.opacity = "0.3";
+    const line = document.createElement("div");
+    line.style.cssText = "position:fixed; left:" + rect.left + "px; width:" + rect.width + "px; height:3px; border-radius:2px; background:#c67139; z-index:2147483001; pointer-events:none; display:none";
+    document.body.appendChild(line);
+    this._drag = { id: id, parentId: parentId, sibs: sibs, clone: clone, line: line, node: node, offY: cy - rect.top, targetIndex: sibs.indexOf(id) };
+    document.addEventListener("pointermove", this._dm, { passive: false });
+    document.addEventListener("pointerup", this._du);
+    document.addEventListener("pointercancel", this._du);
+  },
+  dragMove(ev) {
+    const d = this._drag; if (!d) return;
+    try { ev.preventDefault(); } catch (e) {}
+    const cy = (ev.touches && ev.touches[0]) ? ev.touches[0].clientY : ev.clientY;
+    d.clone.style.top = (cy - d.offY) + "px";
+    let idx = d.sibs.length, lineY = null;
+    for (let i = 0; i < d.sibs.length; i++) {
+      const el = document.getElementById("node-" + d.sibs[i]); if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (cy < r.top + r.height / 2) { idx = i; lineY = r.top - 5; break; }
+    }
+    if (lineY == null) { const last = document.getElementById("node-" + d.sibs[d.sibs.length - 1]); if (last) lineY = last.getBoundingClientRect().bottom + 2; }
+    d.targetIndex = idx;
+    if (lineY != null) { d.line.style.top = lineY + "px"; d.line.style.display = "block"; }
+  },
+  dragEnd() {
+    const d = this._drag; if (!d) return;
+    document.removeEventListener("pointermove", this._dm);
+    document.removeEventListener("pointerup", this._du);
+    document.removeEventListener("pointercancel", this._du);
+    if (d.clone) d.clone.remove();
+    if (d.line) d.line.remove();
+    if (d.node) d.node.style.opacity = "";
+    this._drag = null;
+    const from = d.sibs.indexOf(d.id);
+    let to = d.targetIndex;
+    if (to > from) to -= 1;                 // removing the dragged item shifts later indices
+    if (to < 0 || to === from) return;      // dropped in place — nothing to do
+    this.reorderSibling(d.id, d.parentId, to);
+  },
+  // Move a node to position `toIndex` among its same-parent siblings by
+  // repositioning its entry in the people array (parentId unchanged; the tree
+  // groups children by parentId in array order, so the subtree follows).
+  reorderSibling(id, parentId, toIndex) {
+    const dragged = this.state.people.find(p => p.id === id); if (!dragged) return;
+    const arr = this.state.people.filter(p => p.id !== id);
+    const sibsAfter = arr.filter(p => (p.parentId || null) === (parentId || null)).map(p => p.id);
+    const beforeId = sibsAfter[toIndex];
+    let pos;
+    if (beforeId) pos = arr.findIndex(p => p.id === beforeId);
+    else { const lastId = sibsAfter[sibsAfter.length - 1]; pos = lastId ? arr.findIndex(p => p.id === lastId) + 1 : arr.length; }
+    arr.splice(pos, 0, dragged);
+    this.setState({ people: arr });
   },
   // Avatar initials: strip punctuation (parentheses, quotes, nicknames, etc.) so
   // only real words count, then take the first letter of the first two words —
@@ -1597,6 +1675,7 @@ const App = {
             partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
             coParent: p.coParent || null,
             relateMode: s.relateMode && !p.placeholder, relateChecked: s.relateSel.indexOf(p.id) > -1, onRelate: () => this.relatePick(p.id),
+            rearrange: s.rearrangeMode && !p.placeholder, onRearrangeStart: (ev) => this.startRearrange(p.id, ev),
             childOf: (flat && parentName) ? parentName : null,   // shown only in the generation view
             links: this.linksOf(p.id).map(l => Object.assign({}, l, {
               onJump: () => {
@@ -1975,6 +2054,8 @@ const App = {
       relateFirstName: s.relateSel.length === 1 ? ((s.people.find(p => p.id === s.relateSel[0]) || {}).name || "") : "",
       onToggleRelate: () => this.toggleRelate(),
       onRelateBack: () => this.setState({ relateShow: false, relateSel: [] }),
+      rearrangeMode: s.rearrangeMode,
+      onToggleRearrange: () => this.toggleRearrange(),
       onOpenBoard: () => this.setState({ sheet: "board" }),
       onOpenShare: () => { this.setState({ sheet: "share" }); track("share"); },
       onOpenAssistant: () => this.setState({ sheet: "assistant", assistantResult: "", assistantError: null }),
@@ -2526,6 +2607,7 @@ function viewApp(V) {
     appHeader(V),
     frozenBanner(V),
     relateBanner(V),
+    rearrangeBanner(V),
     V.isRadial ? appRadial(V) : V.isRows ? rowsView(V) : appTree(V),
     appToast(V),
     appScrim(V),
@@ -2555,6 +2637,17 @@ function relateBanner(V) {
   return h("div", { key: "relbar", style: "flex:none; display:flex; align-items:center; gap:10px; padding:11px 16px; background:#fff2eb; border-bottom:1.5px solid #f6a06b" },
     h("span", { style: "flex:1; font-size:13px; font-weight:700; line-height:1.4; color:#8c491a" }, msg),
     btn({ onClick: V.onToggleRelate, style: "flex:none; font-size:12px; font-weight:700; padding:7px 13px; border-radius:999px; border:1.5px solid #f6a06b; background:transparent; color:#8c491a; cursor:pointer" }, "Cancel")
+  );
+}
+
+// Rearrange mode — note bar while dragging to reorder siblings.
+function rearrangeBanner(V) {
+  if (!V.rearrangeMode) return null;
+  return h("div", { key: "rearrbar", style: "flex:none; display:flex; align-items:center; gap:10px; padding:11px 16px; background:#fff2eb; border-bottom:1.5px solid #f6a06b; color:#8c491a" },
+    h("span", { style: "flex:1; font-size:13px; line-height:1.4" },
+      h("span", { style: "font-weight:800" }, "Rearrange family tree — "),
+      "drag ", h("span", { style: "font-weight:800" }, "☰"), " to reorder people under the same parent."),
+    btn({ onClick: V.onToggleRearrange, style: "flex:none; font-size:12px; font-weight:800; padding:7px 14px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Done")
   );
 }
 
@@ -2592,6 +2685,7 @@ function appDesktop(V) {
       appHeader(V, true),
       frozenBanner(V),
       relateBanner(V),
+      rearrangeBanner(V),
       V.isRadial ? appRadial(V) : V.isRows ? rowsView(V) : appTree(V)
     ),
     appSidebar(V),
@@ -2695,8 +2789,10 @@ function appHeader(V, wide) {
             h("span", { style: "font-size:9px" }, V.toolsOpen ? "▾" : "▸"),
             h("span", null, activeGen ? activeGen.label : "Filters"));
         })(),
+        // Rearrange: drag to reorder siblings under a parent (Branches view, editable boards).
+        (!V.isRadial && !V.isRows && V.canEdit) ? btn({ onClick: V.onToggleRearrange, title: "Rearrange — drag to reorder under a parent", "aria-label": "Rearrange", style: iconBtn + " width:34px; height:34px; font-size:16px; line-height:1; border:1.5px solid " + (V.rearrangeMode ? "#8c491a" : "#dcd3c4") + "; background:" + (V.rearrangeMode ? "#8c491a" : "#f9f4ed") + "; color:" + (V.rearrangeMode ? "#fff2eb" : "#645c50"), hover: "border-color:#c67139" }, "☰") : null,
         // Paid boards: the live link is in the menu, so this slot becomes a
-        // wishbone button (Branches/Rows only, not radial). Decorative for now.
+        // wishbone button (Branches/Rows only, not radial).
         V.isPaid
           ? (V.isRadial ? null : btn({ onClick: V.onToggleRelate, title: "See how two people are related", "aria-label": "Relationship finder", style: iconBtn + " width:36px; height:36px; border:none; background:" + (V.relateMode ? "#8c491a" : "#c67139") + ";", hover: "background:#b2622d" }, h("img", { src: wishbone, alt: "", style: "width:19px; height:19px; display:block" })))
           : btn({ onClick: V.onOpenUpgrade, style: "flex:none; font-size:13px; font-weight:800; padding:9px 15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, V.saveButtonLabel)
@@ -2841,7 +2937,7 @@ function row(r) {
         h("span", { style: "font-size:12px; color:" + r.color }, r.chevron),
         h("span", { style: "font-size:10px; font-weight:800; color:" + r.color }, String(r.below))
       ) : null,
-      btn({ onClick: r.relateMode ? r.onRelate : r.onSelect, style: "flex:1; min-width:0; text-align:left; display:flex; gap:10px; align-items:flex-start; padding:8px 10px 8px 12px; border:none; background:transparent; cursor:pointer" },
+      btn({ onClick: r.relateMode ? r.onRelate : (r.rearrange ? (() => {}) : r.onSelect), style: "flex:1; min-width:0; text-align:left; display:flex; gap:10px; align-items:flex-start; padding:8px 10px 8px 12px; border:none; background:transparent; cursor:" + (r.rearrange ? "default" : "pointer") },
         r.photo
           ? h("img", { src: r.photo, alt: r.name, onClick: r.onPhoto, title: "Tap to enlarge", style: "flex:none; width:38px; height:38px; border-radius:999px; object-fit:cover; border:2.5px solid " + r.color + "; cursor:zoom-in" })
           : h("span", { style: "flex:none; width:38px; height:38px; border-radius:999px; background:" + r.soft + "; border:2.5px solid " + r.color + "; color:" + r.color + "; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center" }, r.initials),
@@ -2878,7 +2974,9 @@ function row(r) {
       r.relateMode
         ? btn({ onClick: r.onRelate, title: "Select for relationship", "aria-label": "Select", style: "flex:none; width:50px; border:none; background:transparent; display:flex; align-items:center; justify-content:center; cursor:pointer" },
             h("span", { style: "width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; color:#fff2eb; border:2px solid " + (r.relateChecked ? "#c67139" : "#c0b6a5") + "; background:" + (r.relateChecked ? "#c67139" : "transparent") }, r.relateChecked ? "✓" : ""))
-        : (r.canEdit ? btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:transparent; color:" + r.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + r.soft }, "+") : null)
+        : r.rearrange
+          ? btn({ onPointerdown: r.onRearrangeStart, title: "Drag to reorder under this parent", "aria-label": "Drag to reorder", style: "flex:none; width:50px; border:none; background:transparent; color:" + r.color + "; font-size:18px; cursor:grab; touch-action:none; display:flex; align-items:center; justify-content:center" }, "☰")
+          : (r.canEdit ? btn({ onClick: r.onPlus, title: "Add a child, parent, or sibling", style: "flex:none; width:50px; border:none; background:transparent; color:" + r.color + "; font-size:26px; font-weight:700; cursor:pointer", hover: "background:" + r.soft }, "+") : null)
     );
     const card = [head];
     if (r.selected && r.canEdit) {
