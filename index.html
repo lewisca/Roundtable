@@ -2026,7 +2026,7 @@ const App = {
       isRadial: s.viewMode === "radial",
       isRows: s.viewMode === "rows",
       genGroups: genGroups, rowsSummary: rowsSummary,
-      onSetView: (m) => () => { if (this.state.viewMode === m) return; this.setState({ viewMode: m, radialSel: null, radialFocus: null, sheet: null }); if (m === "rows") track("row_view"); else if (m === "radial") track("Radial_view"); },
+      onSetView: (m) => () => { if (this.state.viewMode === m) return; this.setState({ viewMode: m, radialSel: null, radialFocus: null, sheet: null, rearrangeMode: false, relateMode: false, relateSel: [], relateShow: false }); if (m === "rows") track("row_view"); else if (m === "radial") track("Radial_view"); },
       toolsOpen: s.toolsOpen,
       onToggleTools: () => { const open = !this.state.toolsOpen; this.setState({ toolsOpen: open }); if (open) track("Filters"); },
       onRadialClick: (e) => {
