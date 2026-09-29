@@ -1810,9 +1810,16 @@ const App = {
     }
     const rows = this.flatten(false);
     const anyMatch = rows.some(r => r.isCard && r.dim === 1);
-    // First on-screen match for a search — stashed so syncSearchFocus() can
-    // scroll it into view (a query auto-expands the tree, so it always renders).
-    this._searchMatchId = (s.query.trim() && anyMatch) ? ((rows.find(r => r.isCard && r.dim === 1) || {}).id || null) : null;
+    // First on-screen match to scroll to (syncSearchFocus). Prefer a match on the
+    // person's own NAME (or a spouse's) — otherwise searching a prolific editor
+    // (whose name is in many cards' "added by") would jump to the first person
+    // they added instead of their own card. Fall back to any match.
+    this._searchMatchId = (() => {
+      const qn = s.query.trim().toLowerCase();
+      if (!qn || !anyMatch) return null;
+      const nameHit = rows.find(r => r.isCard && ((r.name || "").toLowerCase().indexOf(qn) > -1 || (r.partners || []).some(pp => (pp.name || "").toLowerCase().indexOf(qn) > -1)));
+      return (nameHit || rows.find(r => r.isCard && r.dim === 1) || {}).id || null;
+    })();
     // Rows view — everyone grouped by generation (a flat, addable directory)
     const genGroups = (() => {
       const q = s.query.trim().toLowerCase();
