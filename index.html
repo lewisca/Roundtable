@@ -2147,13 +2147,14 @@ const App = {
       onDownloadImage: () => { this.downloadImage(total); track("tree_downloaded", { format: "image" }); },
       // Festive (paid-only) download: a holiday + a short tagline in the header.
       onOpenCustomDl: () => this.setState({ sheet: "customdl", dlHoliday: this.state.dlHoliday || "Christmas" }),
-      // Paid unlocks the full, inclusive set of 20 (major faith & cultural
+      // Paid unlocks the full, inclusive set of 22 (major faith & cultural
       // celebrations plus universal family milestones); the free preview shows a
       // simple, still-diverse teaser of 6 so the upgrade unlocks the rest.
       holidays: s.subscribed
         ? ["Christmas", "New Year", "Thanksgiving", "Easter", "Hanukkah", "Passover",
            "Eid", "Diwali", "Holi", "Lunar New Year", "Mid-Autumn Festival", "Nowruz",
            "Vaisakhi", "Kwanzaa", "Juneteenth", "Día de los Muertos",
+           "Mother's Day", "Father's Day",
            "Reunion", "Wedding", "Anniversary", "Graduation"]
         : ["Christmas", "Hanukkah", "Eid", "Diwali", "Lunar New Year", "Reunion"],
       dlHoliday: s.dlHoliday || "Christmas",
@@ -3727,7 +3728,7 @@ function customDlSheet(V) {
     ),
     // Live preview (reuses the download preview host, rendered with the festive header)
     h("div", { key: "dlhost", id: "dl-host", raw: true, style: "flex:none; height:200px; border-radius:20px; border:1.5px solid #dcd3c4; background:#fffaf3; padding:10px; overflow:hidden; display:flex; align-items:center; justify-content:center" }),
-    V.isPaid ? null : h("div", { style: "font-size:12px; text-align:center; color:#82796a; margin-top:-4px" }, "A live preview — 6 of 20 occasions. Customise it, then upgrade to download."),
+    V.isPaid ? null : h("div", { style: "font-size:12px; text-align:center; color:#82796a; margin-top:-4px" }, "A live preview — 6 of 22 occasions. Customise it, then upgrade to download."),
     // Holiday picker
     h("div", { style: "display:flex; flex-direction:column; gap:8px" },
       h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Occasion"),
@@ -3760,7 +3761,7 @@ function customDlSheet(V) {
       : h("div", { style: "display:flex; flex-direction:column; gap:11px" },
           h("div", { style: "padding:15px 17px; border-radius:20px; background:#fff2eb; border:1.5px solid #f6a06b; display:flex; flex-direction:column; gap:5px" },
             h("div", { style: "font-size:15px; font-weight:800; color:#8c491a" }, "🔒 Upgrade to download your festive tree"),
-            h("div", { style: "font-size:13px; line-height:1.5; color:#8c491a" }, "Unlock all 20 occasions and download the festive tree — as a PDF or image, for cards, gifts and the family group chat. Keeps the board editable for everyone too. $19.99/year for the whole family.")
+            h("div", { style: "font-size:13px; line-height:1.5; color:#8c491a" }, "Unlock all 22 occasions and download the festive tree — as a PDF or image, for cards, gifts and the family group chat. Keeps the board editable for everyone too. $19.99/year for the whole family.")
           ),
           btn({ onClick: V.onOpenUpgrade, style: "font-size:16px; font-weight:800; padding:17px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Upgrade — $19.99/yr")
         )
