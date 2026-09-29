@@ -1363,7 +1363,7 @@ const App = {
   openEdit(id) {
     if (this.blockedByFreeze()) return;
     const p = this.state.people.find(x => x.id === id);
-    const partners = this.partnersOf(p).map(pp => ({ name: pp.name || "", born: pp.born || "", died: pp.died || "", place: pp.place || "" }));
+    const partners = this.partnersOf(p).map(pp => ({ name: pp.name || "", born: pp.born || "", died: pp.died || "", place: pp.place || "", current: !!pp.current }));
     this.setState({
       sheet: "edit", editId: id, editIsNew: false, editParentOf: null, addKind: null,
       draftName: p.placeholder ? "" : p.name, draftBorn: p.born || "", draftDied: p.died || "", draftPlace: p.place || "",
@@ -1469,8 +1469,11 @@ const App = {
     const s = this.state, name = s.draftName.trim();
     if (!name) return;
     const partners = (s.draftPartners || [])
-      .map(pp => ({ name: (pp.name || "").trim(), born: pp.born || "", died: pp.died || "", place: pp.place || "" }))
+      .map(pp => ({ name: (pp.name || "").trim(), born: pp.born || "", died: pp.died || "", place: pp.place || "", current: !!pp.current }))
       .filter(pp => pp.name);
+    // "current" only matters with 2+ partners; keep at most one.
+    if (partners.length < 2) partners.forEach(pp => { delete pp.current; });
+    else { let seen = false; partners.forEach(pp => { if (pp.current) { if (seen) pp.current = false; else seen = true; } }); }
     const fields = {
       name, born: s.draftBorn, died: s.draftDied, place: s.draftPlace, note: s.draftNote,
       partners: partners, partner: null,               // partner[] is authoritative; clear legacy single
@@ -1718,7 +1721,7 @@ const App = {
             initials: p.placeholder ? "＋" : this.initials(p.name), photo: p.placeholder ? null : (p.photo || null),
             onPhoto: (!p.placeholder && p.photo) ? (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ lightbox: { photo: p.photo, name: p.name } }); } : null,
             detail: detail,
-            partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp) })),
+            partners: this.partnersOf(p).map(pp => ({ name: pp.name, years: this.years(pp), current: !!pp.current })),
             coParent: p.coParent || null,
             relateMode: s.relateMode && !p.placeholder, relateChecked: s.relateSel.indexOf(p.id) > -1, onRelate: () => this.relatePick(p.id),
             rearrange: s.rearrangeMode && !p.placeholder, onRearrangeStart: (ev) => this.startRearrange(p.id, ev),
@@ -1844,7 +1847,7 @@ const App = {
             name: p.name, years: this.years(p),
             // when a single generation is shown, name each person's parent (like the Branches view)
             childOf: (only !== null && p.parentId) ? ((s.people.find(x => x.id === p.parentId) || {}).name || null) : null,
-            partners: this.partnersOf(p).map(pp => pp.name).filter(Boolean),
+            partners: this.partnersOf(p).filter(pp => pp.name).map(pp => ({ name: pp.name, current: !!pp.current })),
             coParent: p.coParent || null,
             relateMode: s.relateMode && !p.placeholder, relateChecked: s.relateSel.indexOf(p.id) > -1, onRelate: () => this.relatePick(p.id),
             offspring: this.below(p.id),
@@ -2223,6 +2226,7 @@ const App = {
       }),
       onAddPartner: () => this.setState(st => ({ draftPartners: st.draftPartners.concat([{ name: "", born: "", died: "", place: "" }]), draftMore: true })),
       removePartner: (i) => () => this.setState(st => ({ draftPartners: st.draftPartners.filter((_, j) => j !== i) })),
+      setPartnerCurrent: (i) => () => this.setState(st => ({ draftPartners: st.draftPartners.map((pp, j) => Object.assign({}, pp, { current: j === i ? !pp.current : false })) })),
       coParentOptions: coParentOptions,
       draftCoParent: s.draftCoParent,
       onDraftCoParent: e => this.setState({ draftCoParent: e.target.value }),
@@ -2959,9 +2963,10 @@ function rowsPerson(p, g) {
           h("span", { style: "font-size:10px" }, "↑"), h("span", null, "child of " + p.childOf)
         ) : null,
         (p.partners.length || p.coParent || p.offspring) ? h("span", { style: "display:flex; align-items:center; gap:8px; flex-wrap:wrap" },
-          p.partners.map((nm, i) => h("span", { key: "pt" + i, style: "display:flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; background:" + g.soft },
+          p.partners.map((pt, i) => h("span", { key: "pt" + i, style: "display:flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; background:" + g.soft },
             h("span", { style: "font-size:11px; color:" + g.color }, "♥"),
-            h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, nm)
+            h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, pt.name),
+            pt.current ? h("span", { style: "font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#fff2eb; background:#7a8a5e; padding:2px 7px; border-radius:999px" }, "Current") : null
           )),
           p.coParent ? h("span", { style: "font-size:11px; font-style:italic; color:#82796a" }, "with " + p.coParent) : null,
           p.offspring ? h("span", { style: "font-size:12px; color:#645c50" }, p.offspring + " offspring") : null
@@ -3032,7 +3037,8 @@ function row(r) {
           r.partners.map((pt, i) => h("span", { key: "pp" + i, style: "align-self:flex-start; display:flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; background:" + r.soft },
             h("span", { style: "font-size:11px; color:" + r.color }, "♥"),
             h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, pt.name),
-            pt.years ? h("span", { style: "font-size:11px; color:#82796a" }, pt.years) : null
+            pt.years ? h("span", { style: "font-size:11px; color:#82796a" }, pt.years) : null,
+            pt.current ? h("span", { style: "font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#fff2eb; background:#7a8a5e; padding:2px 7px; border-radius:999px" }, "Current") : null
           )),
           r.coParent ? h("span", { style: "align-self:flex-start; font-size:11px; font-style:italic; color:#82796a" }, "· with " + r.coParent) : null,
           (r.links || []).map((lk, i) => {
@@ -3201,7 +3207,8 @@ function projRow(r) {
       h("span", { style: "font-size:13px; color:#82796a" }, r.years),
       r.partners.map((pt, i) => h("span", { key: "pp" + i, style: "display:flex; align-items:center; gap:7px; padding:4px 12px; border-radius:999px; background:" + r.soft },
         h("span", { style: "font-size:12px; color:" + r.color }, "♥"),
-        h("span", { style: "font-size:14px; font-weight:700" }, pt.name)
+        h("span", { style: "font-size:14px; font-weight:700" }, pt.name),
+        pt.current ? h("span", { style: "font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#fff2eb; background:#7a8a5e; padding:2px 7px; border-radius:999px" }, "Current") : null
       )),
       r.coParent ? h("span", { style: "font-size:12px; font-style:italic; color:#82796a" }, "with " + r.coParent) : null,
       h("span", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:" + r.byColor }, r.byLine)
@@ -3276,7 +3283,10 @@ function editSheet(V) {
       V.draftPartners.map((pp, i) => h("div", { key: "pt" + i, style: "padding:14px; border-radius:20px; border:1.5px solid #dcd3c4; background:#f9f4ed; display:flex; flex-direction:column; gap:10px" },
         h("div", { style: "display:flex; align-items:center; justify-content:space-between; gap:10px" },
           h("div", { style: "font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:#82796a" }, "Partner " + (i + 1)),
-          btn({ onClick: V.removePartner(i), style: "font-size:12px; font-weight:700; padding:7px 12px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove")
+          h("div", { style: "display:flex; align-items:center; gap:8px" },
+            V.draftPartners.length >= 2 ? btn({ onClick: V.setPartnerCurrent(i), title: pp.current ? "This is the current partner" : "Mark as the current partner", style: "font-size:11px; font-weight:800; padding:6px 12px; border-radius:999px; cursor:pointer; border:1.5px solid " + (pp.current ? "#7a8a5e" : "#dcd3c4") + "; background:" + (pp.current ? "#7a8a5e" : "transparent") + "; color:" + (pp.current ? "#fff2eb" : "#645c50"), hover: pp.current ? "" : "border-color:#7a8a5e; color:#56633f" }, pp.current ? "✓ Current" : "Current") : null,
+            btn({ onClick: V.removePartner(i), style: "font-size:12px; font-weight:700; padding:7px 12px; border-radius:999px; border:1.5px solid #f6a06b; background:#fff2eb; color:#8c491a; cursor:pointer" }, "Remove")
+          )
         ),
         inp({ value: pp.name, onChange: V.setPartnerField(i, "name"), placeholder: "Their name", style: "font-size:16px; padding:13px 18px; border-radius:999px; border:1.5px solid #dcd3c4; background:#f5ead8; color:#201e1d; outline:none" }),
         h("div", { style: "display:flex; gap:10px" },
