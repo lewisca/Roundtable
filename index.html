@@ -559,7 +559,7 @@ const App = {
       patch(this._root, this._vnode, next, 0);
     }
     this._vnode = next;
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { this.syncGenArrows(); this.syncRadial(); this.syncDownloadPreview(); this.syncRelateDiagram(); });
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => { this.syncGenArrows(); this.syncRadial(); this.syncDownloadPreview(); this.syncRelateDiagram(); this.syncSearchFocus(); });
   },
   // Show the generation-filter scroll arrows only when the row overflows.
   syncGenArrows() {
@@ -686,6 +686,18 @@ const App = {
     host._sig = sig;
     const info = this.relationship(this.state.relateSel[0], this.state.relateSel[1]);
     host.innerHTML = info ? this.relateDiagramSVG(info) : "";
+  },
+  // Bring the first search match into view so the user never has to scroll to it.
+  syncSearchFocus() {
+    if (this.state.step !== "app" || this.state.viewMode === "radial") { this._searchScrollKey = null; return; }
+    const q = (this.state.query || "").trim();
+    const id = this._searchMatchId;
+    const key = q + "|" + (id || "") + "|" + this.state.viewMode;
+    if (!q || !id) { this._searchScrollKey = key; return; }
+    if (this._searchScrollKey === key) return;   // already centered this match
+    this._searchScrollKey = key;
+    const el = document.getElementById("node-" + id);
+    if (el && el.scrollIntoView) { try { el.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) { el.scrollIntoView(); } }
   },
   relateDiagramSVG(info) {
     if (info.unrelated) return "";
@@ -1798,6 +1810,9 @@ const App = {
     }
     const rows = this.flatten(false);
     const anyMatch = rows.some(r => r.isCard && r.dim === 1);
+    // First on-screen match for a search — stashed so syncSearchFocus() can
+    // scroll it into view (a query auto-expands the tree, so it always renders).
+    this._searchMatchId = (s.query.trim() && anyMatch) ? ((rows.find(r => r.isCard && r.dim === 1) || {}).id || null) : null;
     // Rows view — everyone grouped by generation (a flat, addable directory)
     const genGroups = (() => {
       const q = s.query.trim().toLowerCase();
