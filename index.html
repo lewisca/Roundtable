@@ -1016,7 +1016,7 @@ const App = {
   loadRoom(room) {
     const raw = localStorage.getItem(STORE_PREFIX + room);
     if (raw) { try { return JSON.parse(raw); } catch (e) {} }
-    if (room === DEMO_ROOM) return { familyName: SEED.familyName, people: clone(SEED.people), feed: clone(SEED.feed), log: clone(SEED.log), thread: clone(SEED.thread), fresh: {}, collapsed: {}, subscribed: false };
+    if (room === DEMO_ROOM) return { familyName: SEED.familyName, people: clone(SEED.people), feed: clone(SEED.feed), log: clone(SEED.log), thread: clone(SEED.thread), fresh: {}, collapsed: {}, subscribed: true };
     return null;
   },
   enterRoom(room, isNew) {
@@ -1026,7 +1026,7 @@ const App = {
         room, step: "app", shared: true, selected: null, sheet: null, tick: 0, undoStack: [], query: "", genView: "all", viewMode: "list", radialSel: null, radialFocus: null, toast: null, relateMode: false, relateSel: [], relateShow: false, rearrangeMode: false,
         familyName: data.familyName || "", people: this.resolveFlags(this.sanitizeCoParents(data.people || [])), feed: data.feed || [],
         log: data.log || [], thread: data.thread || clone(SEED.thread), fresh: data.fresh || {},
-        collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: !!data.subscribed
+        collapsed: data.collapsed || {}, links: data.links || [], connectFor: null, subscribed: room === DEMO_ROOM ? true : !!data.subscribed
       });
     } else {
       // brand-new board — created boards get a 3-generation starter template so
@@ -3835,7 +3835,7 @@ function upgradeSheet(V) {
   try {
     if (!localStorage.getItem(STORE_PREFIX + DEMO_ROOM)) {
       localStorage.setItem(STORE_PREFIX + DEMO_ROOM, JSON.stringify({
-        familyName: SEED.familyName, people: SEED.people, feed: SEED.feed, log: SEED.log, thread: SEED.thread, fresh: {}, collapsed: {}, subscribed: false
+        familyName: SEED.familyName, people: SEED.people, feed: SEED.feed, log: SEED.log, thread: SEED.thread, fresh: {}, collapsed: {}, subscribed: true
       }));
     }
   } catch (e) {}
