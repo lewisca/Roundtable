@@ -1541,11 +1541,14 @@ const App = {
   sendBoardLink() {
     const code = this.state.room;
     const url = "https://famroundtable.com/?board=" + code;
-    const text = "Our family tree on Roundtable — board " + code + ": " + url;
+    const fam = (this.state.familyName || "").trim();
+    // `title` becomes the email subject line when the share target is Mail.
+    const subject = (fam ? fam : "Our family tree") + " on Roundtable · board " + code;
+    const text = "Here’s the link to " + (fam ? "the " + fam : "our family tree") + " on Roundtable — open it to see and add family: " + url + " (or enter board code " + code + ")";
     track("board_link_shared");
     this.markShared(code); this.dismissNudge(code);
     let shared = false;
-    try { if (navigator.share) { navigator.share({ title: "Roundtable", text: text, url: url }).catch(() => {}); shared = true; } } catch (e) {}
+    try { if (navigator.share) { navigator.share({ title: subject, text: text, url: url }).catch(() => {}); shared = true; } } catch (e) {}
     if (shared) { this.setState({ emailNudge: false }); return; }
     this.copy(url);
     this.setState({ emailNudge: false, toast: { text: "Link copied — send it to yourself to keep it", i: "✓", c: "#7a8a5e" } }, () => this.flashToast());
