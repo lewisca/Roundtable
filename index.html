@@ -3037,7 +3037,6 @@ function row(r) {
           r.partners.map((pt, i) => h("span", { key: "pp" + i, style: "align-self:flex-start; display:flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; background:" + r.soft },
             h("span", { style: "font-size:11px; color:" + r.color }, "♥"),
             h("span", { style: "font-size:13px; font-weight:700; overflow-wrap:anywhere; min-width:0" }, pt.name),
-            pt.years ? h("span", { style: "font-size:11px; color:#82796a" }, pt.years) : null,
             pt.current ? h("span", { style: "font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#fff2eb; background:#7a8a5e; padding:2px 7px; border-radius:999px" }, "Current") : null
           )),
           r.coParent ? h("span", { style: "align-self:flex-start; font-size:11px; font-style:italic; color:#82796a" }, "· with " + r.coParent) : null,
