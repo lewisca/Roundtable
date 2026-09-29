@@ -44,6 +44,7 @@ tree. Static-hosted on GitHub Pages at `famroundtable.com`. Backend: Supabase
 | `share` | `onOpenShare` (Share code button) | — |
 | `projection_opened` | `onOpenProjection` | — |
 | `relationship_viewed` | wishbone relationship finder — 2nd person picked (`relatePick`) | — |
+| `board_link_shared` | "Save your board link" nudge — Send opens share sheet (`sendBoardLink`) | — |
 | `row_view` | `onSetView("rows")` | — |
 | `Radial_view` | `onSetView("radial")` | — |
 | `Filters` | `onToggleTools` (on open) | — |

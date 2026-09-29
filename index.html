@@ -491,6 +491,7 @@ const App = {
     hereCount: 1, hereNames: [],
     relateMode: false, relateSel: [], relateShow: false,
     rearrangeMode: false,
+    emailNudge: false, emailInput: "", emailErr: null,
     query: "",
     genView: "all",
     viewMode: "list",
@@ -1505,7 +1506,37 @@ const App = {
       const kidIds = Array.isArray(s.editParentOf) ? s.editParentOf : (s.editParentOf ? [s.editParentOf] : []);
       const relation = kidIds.length ? "parent" : (s.addKind || (s.editParent ? "child" : "root"));
       track("person_added", { relation: relation, has_partner: partners.length > 0, demo: s.room === DEMO_ROOM });
+      this._sessionAdds = (this._sessionAdds || 0) + 1;
+      this.maybeShowEmailNudge();
     }
+  },
+  /* ---- "save your link" email nudge --------------------------------- */
+  nudgeDismissed(code) { try { return localStorage.getItem("roundtable:emailnudge:" + code) === "done"; } catch (e) { return false; } },
+  dismissNudge(code) { try { localStorage.setItem("roundtable:emailnudge:" + code, "done"); } catch (e) {} },
+  markShared(code) { try { localStorage.setItem("roundtable:shared:" + code, "1"); } catch (e) {} },
+  hasShared(code) { try { return localStorage.getItem("roundtable:shared:" + code) === "1"; } catch (e) { return false; } },
+  // Show after ~2 adds this session; snoozes by +5 adds on an "x" without a share.
+  maybeShowEmailNudge() {
+    const s = this.state;
+    if (s.emailNudge || s.room === DEMO_ROOM || !s.room) return;
+    if (this.nudgeDismissed(s.room)) return;
+    if ((this._sessionAdds || 0) < 2) return;
+    if (this._nudgeSnoozeUntil && this._sessionAdds < this._nudgeSnoozeUntil) return;
+    this.setState({ emailNudge: true, emailInput: "", emailErr: null });
+  },
+  // No email backend, so "Send" hands the link to the OS share sheet (the person
+  // sends it to themselves from their own apps) and falls back to copying it.
+  sendBoardLink() {
+    const code = this.state.room;
+    const url = "https://famroundtable.com/?board=" + code;
+    const text = "Our family tree on Roundtable — board " + code + ": " + url;
+    track("board_link_shared");
+    this.markShared(code); this.dismissNudge(code);
+    let shared = false;
+    try { if (navigator.share) { navigator.share({ title: "Roundtable", text: text, url: url }).catch(() => {}); shared = true; } } catch (e) {}
+    if (shared) { this.setState({ emailNudge: false }); return; }
+    this.copy(url);
+    this.setState({ emailNudge: false, toast: { text: "Link copied — send it to yourself to keep it", i: "✓", c: "#7a8a5e" } }, () => this.flashToast());
   },
   clock() { const d = new Date(); let hh = d.getHours() % 12 || 12; return hh + ":" + String(d.getMinutes()).padStart(2, "0"); },
   removePerson(mode) {
@@ -2056,8 +2087,13 @@ const App = {
       onRelateBack: () => this.setState({ relateShow: false, relateSel: [] }),
       rearrangeMode: s.rearrangeMode,
       onToggleRearrange: () => this.toggleRearrange(),
+      emailNudge: s.emailNudge, emailInput: s.emailInput, emailErr: s.emailErr,
+      onEmailInput: e => this.setState({ emailInput: e.target.value, emailErr: null }),
+      onEmailSend: () => this.sendBoardLink(),
+      onEmailNoThanks: () => { this.dismissNudge(this.state.room); this.setState({ emailNudge: false }); },
+      onEmailX: () => { const code = this.state.room; if (this.hasShared(code)) this.dismissNudge(code); else this._nudgeSnoozeUntil = (this._sessionAdds || 0) + 5; this.setState({ emailNudge: false }); },
       onOpenBoard: () => this.setState({ sheet: "board" }),
-      onOpenShare: () => { this.setState({ sheet: "share" }); track("share"); },
+      onOpenShare: () => { this.markShared(s.room); this.setState({ sheet: "share" }); track("share"); },
       onOpenAssistant: () => this.setState({ sheet: "assistant", assistantResult: "", assistantError: null }),
       assistantInput: s.assistantInput,
       assistantBusy: s.assistantBusy, assistantResult: s.assistantResult, assistantError: s.assistantError,
@@ -2112,7 +2148,7 @@ const App = {
         ? "Share this link with anyone in the family — it always shows the latest tree."
         : "Your own link to this tree, updating in real time as the family adds to it.",
       liveLink: "famroundtable.com/?board=" + s.room,
-      onCopyLink: () => { this.copy("https://famroundtable.com/?board=" + s.room); this.setState({ sheet: null, toast: { text: "Link copied — paste it in the family thread", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
+      onCopyLink: () => { this.markShared(s.room); this.copy("https://famroundtable.com/?board=" + s.room); this.setState({ sheet: null, toast: { text: "Link copied — paste it in the family thread", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
       planPerks: [
         "A private link that always shows the latest tree — no app to install.",
         "Everyone keeps adding: new babies, new marriages, corrections, years later.",
@@ -2217,7 +2253,7 @@ const App = {
       }),
       onConfirmParentPick: () => this.confirmParentPick(),
       invite: "Help us build the " + s.familyName + " tree at the reunion.\n\nTap the link: https://famroundtable.com/?board=" + s.room + "\n(or open famroundtable.com and enter board code " + s.room + ")\n\nThen add the relatives you know best — takes about two minutes.",
-      onCopyInvite: () => { this.copy(this.renderVals().invite); this.setState({ sheet: null, toast: { text: "Message copied — paste it in the group text", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
+      onCopyInvite: () => { this.markShared(s.room); this.copy(this.renderVals().invite); this.setState({ sheet: null, toast: { text: "Message copied — paste it in the group text", i: "✓", c: "#7a8a5e" } }, () => this.flashToast()); },
       onTextIt: () => {
         const body = encodeURIComponent("Join our family tree on Roundtable: https://famroundtable.com/?board=" + s.room + "  (or enter board code " + s.room + ")");
         window.open("sms:?&body=" + body, "_blank");
@@ -2613,7 +2649,8 @@ function viewApp(V) {
     appScrim(V),
     sheets(V),
     photoLightbox(V),
-    relateResult(V)
+    relateResult(V),
+    emailNudgeCard(V)
   );
 }
 
@@ -2648,6 +2685,23 @@ function rearrangeBanner(V) {
       h("span", { style: "font-weight:800" }, "Rearrange family tree — "),
       "drag ", h("span", { style: "font-weight:800" }, "☰"), " to reorder people under the same parent."),
     btn({ onClick: V.onToggleRearrange, style: "flex:none; font-size:12px; font-weight:800; padding:7px 14px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Done")
+  );
+}
+
+// "Save your link" nudge — appears after a couple of adds (see maybeShowEmailNudge).
+function emailNudgeCard(V) {
+  if (!V.emailNudge) return null;
+  return h("div", { key: "emailnudge", onClick: V.onEmailX, style: "position:fixed; inset:0; z-index:250; display:flex; align-items:flex-end; justify-content:center; padding:14px; background:rgba(32,30,29,.44)" },
+    h("div", { onClick: e => { if (e && e.stopPropagation) e.stopPropagation(); }, style: "width:100%; max-width:460px; background:#f9f4ed; border-radius:26px; box-shadow:0 12px 32px rgba(46,43,37,.3); padding:18px 20px 20px; display:flex; flex-direction:column; gap:12px; animation:riseIn .3s ease" },
+      h("div", { style: "display:flex; align-items:center; justify-content:space-between; gap:12px" },
+        h("div", { style: "font-family:Caprasimo, serif; font-size:21px; line-height:1.15; color:#201e1d" }, "Save your board link"),
+        closeX(V.onEmailX)
+      ),
+      h("div", { style: "font-size:14px; line-height:1.5; color:#645c50" }, "You’ve added a generation or two — send yourself the link now so you can always find your way back to this board."),
+      btn({ onClick: V.onEmailSend, style: "font-size:15px; font-weight:800; padding:15px; border-radius:999px; border:none; background:#c67139; color:#fff2eb; cursor:pointer", hover: "background:#b2622d" }, "Send me the link"),
+      h("div", { style: "font-size:12px; line-height:1.45; color:#82796a; text-align:center" }, "Opens your share menu — text or email it to yourself. It’s also under “Your boards” on this device."),
+      btn({ onClick: V.onEmailNoThanks, style: "font-size:13px; font-weight:700; padding:10px; border-radius:999px; border:none; background:transparent; color:#82796a; cursor:pointer", hover: "color:#201e1d" }, "No thanks, don’t show again")
+    )
   );
 }
 
@@ -2693,7 +2747,8 @@ function appDesktop(V) {
     appScrim(V),
     sheets(V),
     photoLightbox(V),
-    relateResult(V)
+    relateResult(V),
+    emailNudgeCard(V)
   );
 }
 
