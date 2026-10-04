@@ -810,19 +810,14 @@ const App = {
       try {
         const mineSnap = this.boardSnapshot();
         const mineJson = JSON.stringify(mineSnap);
-        // Fast path — you're the only one editing: your copy is already current
-        // (adopted on entry, kept live by realtime), so just write it. No fetch,
-        // no merge, no extra re-render. This is the common case and keeps saving
-        // snappy. The costly fetch-merge-adopt below runs only when others are on
-        // the board at the same time — the only situation a blind overwrite could
-        // drop someone else's work.
-        if ((this.state.hereCount || 1) <= 1) {
-          this._lastWriteJSON = mineJson;
-          await sb.from("boards").upsert({ code: room, data: mineSnap });
-          return;
-        }
-        // Concurrent editors: merge with the latest remote first so a stale local
-        // copy can't drop people or edits another device made since we synced.
+        // ALWAYS merge with the latest remote before writing — never blind-overwrite.
+        // A blind upsert is unsafe even when you look like the only editor
+        // (hereCount <= 1): presence and realtime can be stale (a backgrounded
+        // mobile tab misses updates yet still reads hereCount 1), so your copy may
+        // be behind the server. Overwriting then resurrects people another device
+        // deleted and drops their edits. Merging honours deletion tombstones and
+        // unions people/links, so nothing another device did is lost. Boards are
+        // small and the save is debounced, so the extra read is cheap.
         let merged = mineSnap;
         const { data: cur } = await sb.from("boards").select("data").eq("code", room).maybeSingle();
         if (this.state.room !== room || this.state.step !== "app") return; // navigated away mid-fetch
